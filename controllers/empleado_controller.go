@@ -2,6 +2,8 @@ package controllers
 
 import (
 	"net/http"
+	"time"
+	"strings"
 	"github.com/gin-gonic/gin"
 	"AppWebPruebaEmpleados/config"
 	"AppWebPruebaEmpleados/models"
@@ -39,13 +41,42 @@ func CrearEmpleado(c *gin.Context) {
 		return
 	}
 
-	result := config.DB.Create(&nuevo)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+	nuevo.FechaContratacion = time.Now().Format("2006-01-02")
+
+	// Si no se especifica el rol o se envía vacío, asignar por defecto "Empleado"
+	rol := strings.ToLower(strings.TrimSpace(nuevo.Rol))
+
+	if rol == "" || rol == "empleado" {
+		nuevo.Rol = "Empleado"
+	} else if rol == "supervisor" {
+		nuevo.Rol = "Supervisor"
+		nuevo.SupervisorID = nil
+	}else{
+		// Si se envía un rol inválido, podrías rechazarlo también
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Rol inválido. Solo se permite 'Empleado' o 'Supervisor'"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, nuevo)
+	// ✅ Si el rol es "Empleado", validar que el supervisor exista y sea Supervisor
+	if nuevo.Rol == "Empleado" && nuevo.SupervisorID != nil {
+		var supervisor models.Empleado
+		if err := config.DB.First(&supervisor, *nuevo.SupervisorID).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "El supervisor indicado no existe"})
+			return
+		}
+		if strings.ToLower(supervisor.Rol) != "supervisor" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "El empleado asignado como supervisor no tiene rol de 'Supervisor'"})
+			return
+		}
+
+		result := config.DB.Create(&nuevo)
+		if result.Error != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+			return
+		}
+
+		c.JSON(http.StatusCreated, nuevo)
+	}
 }
 
 // ActualizarEmpleado actualiza un empleado existente
