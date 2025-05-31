@@ -25,6 +25,12 @@ func main() {
 	// Registrar las rutas de empleados
 	routes.RegistrarRutasEmpleado(router)
 
+	// Registrar las rutas de fichajes
+    routes.RegistrarRutasFichaje(router)
+
+	// Registrar las rutas de vacaciones
+	routes.RegistrarRutasVacacion(router)
+
 	// Iniciar el servidor web en el puerto 8080
 	router.Run(":3000")
 }
