@@ -29,7 +29,7 @@ func main() {
     routes.RegistrarRutasFichaje(router)
 
 	// Registrar las rutas de vacaciones
-	routes.RegistrarRutasVacacion(router)
+	//routes.RegistrarRutasVacacion(router)
 
 	// Iniciar el servidor web en el puerto 8080
 	router.Run(":3000")

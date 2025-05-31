@@ -6,15 +6,15 @@ services:
     container_name: go_app
     ports:
       - "3000:3000"
-    depends_on:
-      - db
     environment:
       DB_HOST: db
       DB_USER: admin
       DB_PASSWORD: admin123
       DB_NAME: empleadosdb
       DB_PORT: 5432
-
+    depends_on:
+      db:
+        condition: service_healthy
   db:
     image: postgres:15
     container_name: empleados_db
@@ -28,6 +28,11 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "admin", "-d", "empleadosdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
   pgdata:

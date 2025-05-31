@@ -7,6 +7,7 @@ import (
     "net/http"
     "os"
     "time"
+    "log"
 
     "github.com/gin-gonic/gin"
     "gorm.io/gorm"
@@ -18,52 +19,72 @@ import (
 // CrearFichaje crea un nuevo registro de fichaje (marca la entrada)
 // JSON esperado en el body: { "empleado_id": <int>, "latitud": <float>, "longitud": <float> }
 func CrearFichaje(c *gin.Context) {
+    // 1. Struct para bindear el JSON entrante:
     var input struct {
         EmpleadoID uint    `json:"empleado_id"`
         Latitud    float64 `json:"latitud"`
         Longitud   float64 `json:"longitud"`
     }
+
+    // 2. Intentar bindear JSON; si falla, devolvemos el error exacto
     if err := c.ShouldBindJSON(&input); err != nil {
-        c.JSON(http.StatusBadRequest, gin.H{"error": "JSON inválido o faltan campos"})
+        log.Printf("Error al hacer ShouldBindJSON en CrearFichaje: %v\n", err)
+        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
         return
     }
 
-    // 1. Validar que no exista un fichaje abierto para este empleado
+    // 3. Validar que no exista ya un fichaje abierto para este empleado
     var abierto models.Fichaje
     err := config.DB.
         Where("empleado_id = ? AND salida IS NULL", input.EmpleadoID).
         First(&abierto).Error
 
     if err == nil {
+        // Ya existe un fichaje abierto (no se cerró)
         c.JSON(http.StatusBadRequest, gin.H{"error": "Ya tienes un fichaje abierto. Cierra primero el anterior"})
         return
     }
     if err != nil && err != gorm.ErrRecordNotFound {
+        // Algo falló al consultar la base de datos
+        log.Printf("Error al comprobar fichajes abiertos: %v\n", err)
         c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al comprobar fichajes abiertos"})
         return
     }
 
-    // 2. Hacer reverse-geocoding con Google Maps API para obtener dirección
+    // 4. Obtener dirección mediante reverse-geocoding
     direccion := obtenerDireccionGoogle(input.Latitud, input.Longitud)
 
-    // 3. Crear el registro de fichaje
+    // 5. Crear el registro de fichaje con la hora de entrada actual
     f := models.Fichaje{
         EmpleadoID: input.EmpleadoID,
         Entrada:    time.Now(),
         Latitud:    input.Latitud,
         Longitud:   input.Longitud,
-        Ubicacion:  direccion, // cadena vacía si falla geocoding
+        Ubicacion:  direccion,
         Salida:     nil,
     }
 
     if err := config.DB.Create(&f).Error; err != nil {
+        log.Printf("Error al crear fichaje en BD: %v\n", err)
         c.JSON(http.StatusInternalServerError, gin.H{"error": "No se pudo crear el fichaje"})
         return
     }
 
+    // 6. *Recargar* el registro recién creado para traer la relación Empleado
+    //    (con Preload cargamos todos los datos del empleado asociado).
+    if err := config.DB.
+        Preload("Empleado").
+        First(&f, f.ID).Error; err != nil {
+        log.Printf("Error al hacer Preload de Empleado: %v\n", err)
+        // Aunque falle el Preload, podemos devolver el fichaje sin datos de empleado
+    }
+
+    // 7. Formatear las fechas (rellena f.EntradaStr y f.SalidaStr)
+    f.FormatearFechas()
+
+    // 8. Devolver el objeto completo en JSON (incluye datos de empleado y "entrada" formateada)
     c.JSON(http.StatusCreated, f)
 }
-
 // CerrarFichaje actualiza la hora de salida de un fichaje abierto
 // No necesita body, se toma la hora actual como "salida".
 func CerrarFichaje(c *gin.Context) {
