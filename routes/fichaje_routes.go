@@ -6,8 +6,8 @@ import (
 )
 
 // RegistrarRutasFichaje configura las rutas REST para fichajes
-func RegistrarRutasFichaje(r *gin.Engine) {
-	fichajeGroup := r.Group("/fichajes")
+func RegistrarRutasFichaje(rg *gin.RouterGroup) {
+	fichajeGroup := rg.Group("/fichajes")
 	{
 		// 1. Un endpoint para crear un fichaje (entrada)
 		fichajeGroup.POST("/", controllers.CrearFichaje)

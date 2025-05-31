@@ -5,7 +5,6 @@ import (
     "net/http"
     "os"
     "time"
-    "fmt"
 
     "AppWebPruebaEmpleados/config"
     "AppWebPruebaEmpleados/models"
@@ -61,7 +60,7 @@ func GoogleCallback(c *gin.Context) {
                 Nombre:            userInfo.Name,
                 Email:             userInfo.Email,
                 Cargo:             "",      // o lo que quieras asignar por defecto
-                FechaContratacion: time.Now(),
+                FechaContratacion: time.Now().Format("2006-01-02"),
                 SupervisorID:      nil,
                 Rol:               "empleado", // nuevo campo
             }

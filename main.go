@@ -1,45 +1,58 @@
 package main
 
 import (
-	"github.com/joho/godotenv"
-	"github.com/gin-gonic/gin"
-	"AppWebPruebaEmpleados/middleware"
-	"AppWebPruebaEmpleados/controllers"
-	"AppWebPruebaEmpleados/config"
-	"AppWebPruebaEmpleados/routes"
+    "github.com/joho/godotenv"
+    "github.com/gin-gonic/gin"
+
+    "AppWebPruebaEmpleados/config"
+    "AppWebPruebaEmpleados/controllers"
+    "AppWebPruebaEmpleados/middleware"
+    "AppWebPruebaEmpleados/routes"
 )
 
 func main() {
-	// Cagar .env
-	godotenv.Load()
-	// Conectar a la base de datos
-	config.ConectarBD()
+    // 1) Cargar variables de entorno (.env)
+    godotenv.Load()
 
-	// Autenticación con google
-	config.InitGoogleOAuth()
+    // 2) Conectar a la BD y hacer AutoMigrate
+    config.ConectarBD()
 
-	// Crear router con Gin
-	router := gin.Default()
+    // 3) Inicializar Google OAuth
+    config.InitGoogleOAuth()
 
-	// Registrar rutas autenticacion
-	routes.RegistrarRutasAuth(router)
+    // 4) Crear router Gin
+    router := gin.Default()
 
-	// Registrar las rutas de empleados
-	routes.RegistrarRutasEmpleado(router)
+    // ── RUTAS PÚBLICAS (sin token JWT) ───────────────────────────────
+    routes.RegistrarRutasAuth(router)
+    //   └─> Aquí NO ponemos POST /empleados/ (lo reservamos a supervisors)
 
-	// Registrar las rutas de fichajes
-    routes.RegistrarRutasFichaje(router)
+    // ── RUTAS PROTEGIDAS (requieren JWT válido) ───────────────────────
+    protected := router.Group("/")
+    protected.Use(middleware.JWTAuth())
+    {
+        // 5.a) Rutas de empleado (GET, PUT, DELETE). Cualquier usuario autenticado puede llamarlas.
+        routes.RegistrarRutasEmpleado(protected)
 
-	supervisorOnly := router.Group("/")
-	supervisorOnly.Use(middleware.auth())
-	supervisorOnly.Use(middleware.soloSupervisor())
-	{
-		// 4.a) ÚNICAMENTE un supervisor puede CREAR nuevos empleados:
-		supervisorOnly.POST("/empleados/", controllers.CrearEmpleado)
-	}
-	Registrar las rutas de vacaciones
-	routes.RegistrarRutasVacacion(router)
+        // 5.b) Rutas de fichajes (empleado o supervisor)
+        routes.RegistrarRutasFichaje(protected)
 
-	// Iniciar el servidor web en el puerto 8080
-	router.Run(":3000")
+        // 5.c) Rutas de vacaciones (empleado o supervisor)
+        routes.RegistrarRutasVacacion(protected)
+
+		// 5.d) Rutas de dashboard (empleado o supervisor)
+		routes.RegistrarRutasDashboard(protected)
+    }
+
+    // ── RUTAS EXCLUSIVAS PARA SUPERVISORES ─────────────────────────────
+    supervisorOnly := router.Group("/")
+    supervisorOnly.Use(middleware.JWTAuth())
+    supervisorOnly.Use(middleware.SoloSupervisores())
+    {
+        // 6.a) Solo un supervisor puede CREAR nuevos empleados
+        supervisorOnly.POST("/empleados/", controllers.CrearEmpleado)
+    }
+
+    // 7) Arrancar el servidor en el puerto 3000
+    router.Run(":3000")
 }

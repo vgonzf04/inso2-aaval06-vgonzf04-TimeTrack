@@ -6,8 +6,8 @@ import (
 )
 
 // RegistrarRutasVacacion configura las rutas para las solicitudes de vacaciones
-func RegistrarRutasVacacion(r *gin.Engine) {
-    vaca := r.Group("/vacaciones")
+func RegistrarRutasVacacion(rg *gin.RouterGroup) {
+    vaca := rg.Group("/vacaciones")
     {
         // 1. Solicitar vacaciones (estado inicial = "pendiente")
         vaca.POST("/", controllers.CrearVacacion)
