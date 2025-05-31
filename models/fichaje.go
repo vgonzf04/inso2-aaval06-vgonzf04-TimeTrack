@@ -24,8 +24,14 @@ type Fichaje struct {
 
 // FormatearFechas rellena los campos EntradaStr y SalidaStr
 func (f *Fichaje) FormatearFechas() {
-	f.EntradaStr = f.Entrada.Format("2006-01-02 15:04:05")
-	if f.Salida != nil {
-		f.SalidaStr = f.Salida.Format("2006-01-02 15:04:05")
-	}
+    // Cargar la zona horaria de Madrid
+    loc, err := time.LoadLocation("Europe/Madrid")
+    if err != nil {
+        loc = time.UTC
+    }
+    // Convertir Entrada y Salida a Madrid antes de formatear
+    f.EntradaStr = f.Entrada.In(loc).Format("2006-01-02 15:04:05")
+    if f.Salida != nil {
+        f.SalidaStr = f.Salida.In(loc).Format("2006-01-02 15:04:05")
+    }
 }
