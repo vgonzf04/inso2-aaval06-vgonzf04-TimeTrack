@@ -3,6 +3,8 @@ package main
 import (
 	"github.com/joho/godotenv"
 	"github.com/gin-gonic/gin"
+	"AppWebPruebaEmpleados/middleware"
+	"AppWebPruebaEmpleados/controllers"
 	"AppWebPruebaEmpleados/config"
 	"AppWebPruebaEmpleados/routes"
 )
@@ -28,8 +30,15 @@ func main() {
 	// Registrar las rutas de fichajes
     routes.RegistrarRutasFichaje(router)
 
-	// Registrar las rutas de vacaciones
-	//routes.RegistrarRutasVacacion(router)
+	supervisorOnly := router.Group("/")
+	supervisorOnly.Use(middleware.auth())
+	supervisorOnly.Use(middleware.soloSupervisor())
+	{
+		// 4.a) ÚNICAMENTE un supervisor puede CREAR nuevos empleados:
+		supervisorOnly.POST("/empleados/", controllers.CrearEmpleado)
+	}
+	Registrar las rutas de vacaciones
+	routes.RegistrarRutasVacacion(router)
 
 	// Iniciar el servidor web en el puerto 8080
 	router.Run(":3000")
