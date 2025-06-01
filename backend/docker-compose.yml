@@ -12,9 +12,6 @@ services:
       DB_PASSWORD: admin123
       DB_NAME: empleadosdb
       DB_PORT: 5432
-      GOOGLE_CLIENT_ID: 69569086694-33m2eir7g9c032hqg4rheqvbla6vohgh.apps.googleusercontent.com
-      GOOGLE_CLIENT_SECRET: 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
-      GOOGLE_MAPS_API_KEY: AIzaSyBa0_LpeFehm5m3jaDeYiTYdeEX6dg89jQ
       JWT_SECRET: qhfihgrgkjgnhanmhglhgutnbubefwrtahg
     depends_on:
       db:
