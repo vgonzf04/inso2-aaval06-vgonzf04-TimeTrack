@@ -95,15 +95,6 @@ func GoogleCallback(c *gin.Context) {
 	}
 
 	c.SetCookie("token", tokenString, 3600, "/", "", false, true) // cookie segura y HTTPOnly
-
-	// 7) Devolver el token JWT junto con la info básica (opcional)
-	c.JSON(http.StatusOK, gin.H{
-		"token": tokenString,
-		"usuario": gin.H{
-			"id":     emp.ID,
-			"nombre": emp.Nombre,
-			"email":  emp.Email,
-			"rol":    emp.Rol,
-		},
-	})
+	c.Redirect(http.StatusFound, "http://localhost:3001/dashboard")
+	
 }

@@ -1,3 +1,5 @@
+"use client"
+
 import { AppSidebar } from "@/components/app-sidebar"
 import { ChartAreaInteractive } from "@/components/chart-area-interactive"
 import { DataTable } from "@/components/data-table"
@@ -8,17 +10,18 @@ import {
   SidebarProvider,
 } from "@/components/ui/sidebar"
 
+import CrearEmpleadoForm from "@/components/empleado"
+import EliminarEmpleadoForm from "@/components/eliminarEmpleado"
+
 import data from "./data.json"
 
 export default function Page() {
   return (
     <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        }
-      }
+      style={{
+        "--sidebar-width": "calc(var(--spacing) * 72)",
+        "--header-height": "calc(var(--spacing) * 12)",
+      }}
     >
       <AppSidebar variant="inset" />
       <SidebarInset>
@@ -31,6 +34,12 @@ export default function Page() {
                 <ChartAreaInteractive />
               </div>
               <DataTable data={data} />
+
+              {/* Formularios solo para supervisores */}
+              <div className="px-4 lg:px-6 space-y-6 mt-6">
+                <CrearEmpleadoForm />
+                <EliminarEmpleadoForm />
+              </div>
             </div>
           </div>
         </div>

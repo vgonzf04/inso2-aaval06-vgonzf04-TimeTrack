@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
+	"fmt"
 	"github.com/gin-gonic/gin"
 )
 
@@ -120,6 +120,8 @@ func CrearEmpleado(c *gin.Context) {
 	}
 
 	nuevo.FechaContratacion = time.Now().Format("2006-01-02")
+
+	fmt.Printf("✅ JSON recibido: %+v\n", nuevo)
 
 	// Si no se especifica el rol o se envía vacío, asignar por defecto "Empleado"
 	rol := strings.ToLower(strings.TrimSpace(nuevo.Rol))
