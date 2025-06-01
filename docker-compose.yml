@@ -1,8 +1,9 @@
 version: '3.8'
 
 services:
-  app:
-    build: .
+  backend:
+    build:
+      context: ./backend
     container_name: go_app
     ports:
       - "3000:3000"
@@ -16,6 +17,18 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: next_frontend
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+    depends_on:
+      - backend
+
   db:
     image: postgres:15
     container_name: empleados_db
