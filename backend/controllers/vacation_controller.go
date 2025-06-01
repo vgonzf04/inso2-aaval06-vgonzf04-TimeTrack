@@ -47,9 +47,8 @@ func CrearVacacion(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
 		return
 	}
-	usuarioID, okID := idRaw.(uint)
 	rolUsuario, okRol := rolRaw.(string)
-	if !okID || !okRol {
+	if !okRol {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
 		return
 	}
@@ -66,7 +65,7 @@ func CrearVacacion(c *gin.Context) {
 	}
 
 	// 6. Si es supervisor, verificar que pueda crear vacación para este empleado
-	if rolUsuario == "supervisor" {
+	/*if rolUsuario == "supervisor" {
 		var subordinado models.Empleado
 		err := config.DB.
 			Where("id = ? AND supervisor_id = ?", idRaw, usuarioID).
@@ -83,7 +82,7 @@ func CrearVacacion(c *gin.Context) {
 		// Cualquier otro rol distinto de supervisor/empleado no está autorizado
 		c.JSON(http.StatusForbidden, gin.H{"error": "Rol no autorizado para crear vacación"})
 		return
-	}
+	}*/
 
 	// 7. Determinar el estado inicial
 	estadoInicial := "pendiente"
@@ -96,11 +95,20 @@ func CrearVacacion(c *gin.Context) {
 		EmpleadoID: emp.ID,
 		Empleado:   emp,
 		Inicio:     fechaInicio,
-		Fin:        fechaFin,
+		Fin:        &fechaFin,
 		Estado:     estadoInicial,
 	}
 
+	
+	if err := config.DB.Create(&v).Error; err != nil {
+		log.Printf("Error al crear vacaciones en BD: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "No se pudo crear la solicitud de vacaciones"})
+		return
+
+		
+	}
 	c.JSON(http.StatusCreated, v)
+
 }
 
 // ListarVacaciones devuelve todas las solicitudes (puede filtrar por empleado_id, estado, rango fechas)
@@ -111,9 +119,39 @@ func CrearVacacion(c *gin.Context) {
 //
 // Adicionalmente, acepta filtros opcionales: empleado_id, estado, desde, hasta.
 func ListarVacaciones(c *gin.Context) {
-	// 1) Obtener usuario_id y rol_usuario del contexto (provenientes de JWTAuth)
+    // 1) Obtener usuario_id y rol_usuario del contexto
+    idRaw, existsID := c.Get("usuario_id")
+    if !existsID {
+        c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
+        return
+    }
+    usuarioID, okID := idRaw.(uint)
+    if !okID {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
+        return
+    }
+
+    var vacas []models.Vacacion
+    // 2) Solo filtro propio: empleado_id = usuarioID
+    if err := config.DB.Preload("Empleado").
+        Where("empleado_id = ?", usuarioID).
+        Find(&vacas).Error; err != nil && err != gorm.ErrRecordNotFound {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar mis solicitudes de vacaciones"})
+        return
+    }
+
+    // 3) (Opcional) Formatear fechas si tu modelo tiene un método similar a FormatearFechas()
+    for i := range vacas {
+        vacas[i].FormatearFechas()
+    }
+
+    // 4) Responder con mis vacaciones
+    c.JSON(http.StatusOK, vacas)
+}
+
+func ListarVacacionesEmpleados(c *gin.Context) {
+	// 1) Obtener usuario_id y rol_usuario del contexto
 	idRaw, existsID := c.Get("usuario_id")
-	log.Println("ListarVacaciones - usuario_id:", idRaw)
 	rolRaw, existsRol := c.Get("rol_usuario")
 	if !existsID || !existsRol {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
@@ -129,22 +167,19 @@ func ListarVacaciones(c *gin.Context) {
 	var vacas []models.Vacacion
 	db := config.DB.Preload("Empleado")
 
+	// 2) Filtrado según rol
 	switch rolUsuario {
 	case "supervisor":
-		// 2.a) Supervisor: vacacione s propias o de empleados cuyo supervisor_id = usuarioID
-		// Hacemos JOIN con empleados e para filtrar e.supervisor_id = usuarioID,
-		// o vacacion.empleado_id = usuarioID
 		db = db.Joins("JOIN empleados e ON e.id = vacacions.empleado_id").
 			Where("e.supervisor_id = ? OR vacacions.empleado_id = ?", usuarioID, usuarioID)
 	case "empleado":
-		// 2.b) Empleado normal: solo sus propias vacacione s
 		db = db.Where("empleado_id = ?", usuarioID)
 	default:
 		c.JSON(http.StatusForbidden, gin.H{"error": "Rol no autorizado para listar vacaciones"})
 		return
 	}
 
-	// 3) Aplicar filtros opcionales (solo si vinieron en query params)
+	// 3) Filtros opcionales
 	if empleadoIDStr := c.Query("empleado_id"); empleadoIDStr != "" {
 		if empIDUint64, err := strconv.ParseUint(empleadoIDStr, 10, 32); err == nil {
 			empID := uint(empIDUint64)
@@ -174,13 +209,13 @@ func ListarVacaciones(c *gin.Context) {
 		}
 	}
 
-	// 4) Ejecutar la consulta
+	// 4) Ejecutar consulta
 	if err := db.Find(&vacas).Error; err != nil && err != gorm.ErrRecordNotFound {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar solicitudes de vacaciones"})
 		return
 	}
 
-	// 5) Responder con el slice (vacío si no hay registros)
+	// 5) Responder con el slice
 	c.JSON(http.StatusOK, vacas)
 }
 

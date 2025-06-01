@@ -177,7 +177,6 @@ func CerrarFichaje(c *gin.Context) {
 	// 8. Retornar el fichaje completo en JSON
 	c.JSON(http.StatusOK, f)
 }
-
 func ObtenerFichajeActual(c *gin.Context) {
 	// 1. Extraer usuario_id y rol_usuario del contexto (JWTAuth los puso)
 	idRaw, existsID := c.Get("usuario_id")
@@ -192,15 +191,17 @@ func ObtenerFichajeActual(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
 		return
 	}
+
 	// 2. Buscar el fichaje abierto del usuario
 	var fichaje models.Fichaje
 	db := config.DB.Preload("Empleado")
+
 	switch rolUsuario {
 	case "supervisor":
 		// 2a) Supervisor: busca fichajes abiertos de sus empleados y el suyo propio
 		err := db.
 			Joins("JOIN empleados e ON e.id = fichajes.empleado_id").
-			Where("e.supervisor_id = ? OR fichajes.empleado_id = ? AND fichajes.salida IS NULL", usuarioID, usuarioID).
+			Where("(e.supervisor_id = ? OR fichajes.empleado_id = ?) AND fichajes.salida IS NULL", usuarioID, usuarioID).
 			First(&fichaje).Error
 		if err != nil {
 			if err == gorm.ErrRecordNotFound {
@@ -211,6 +212,7 @@ func ObtenerFichajeActual(c *gin.Context) {
 			}
 			return
 		}
+
 	case "empleado":
 		// 2b) Empleado normal: busca su propio fichaje abierto
 		err := db.
@@ -225,24 +227,28 @@ func ObtenerFichajeActual(c *gin.Context) {
 			}
 			return
 		}
+
 	default:
 		// 2c) Cualquier otro rol no autorizado
 		c.JSON(http.StatusForbidden, gin.H{"error": "Rol no autorizado para consultar fichaje actual"})
 		return
 	}
+
+	// 3. Si llegamos aquí, sí tenemos un fichaje abierto: respondemos con JSON
+	c.JSON(http.StatusOK, fichaje)
 }
+
 
 // ListarFichajes obtiene el historial de fichajes
 // Permite query params opcionales: empleado_id, desde (YYYY-MM-DD), hasta (YYYY-MM-DD)
 func ListarFichajes(c *gin.Context) {
-	// 1) Extraer usuario_id y rol_usuario del contexto (JWTAuth los puso)
+	// 1) Obtener usuario_id y rol_usuario del contexto
 	idRaw, existsID := c.Get("usuario_id")
 	rolRaw, existsRol := c.Get("rol_usuario")
 	if !existsID || !existsRol {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
 		return
 	}
-
 	usuarioID, okID := idRaw.(uint)
 	rolUsuario, okRol := rolRaw.(string)
 	if !okID || !okRol {
@@ -250,39 +256,41 @@ func ListarFichajes(c *gin.Context) {
 		return
 	}
 
+	// 2) Preparamos la consulta:
 	var fichajes []models.Fichaje
-	db := config.DB.Preload("Empleado")
+	db := config.DB.Preload("Empleado") // Preload para que a JSON venga { empleado: { nombre, ... } }
 
 	switch rolUsuario {
 	case "supervisor":
-		// 2a) Supervisor: trae los fichajes de sus empleados y los suyos propios
-		// Hacemos JOIN con la tabla empleados para filtrar por supervisor_id
 		err := db.
 			Joins("JOIN empleados e ON e.id = fichajes.empleado_id").
-			Where("e.supervisor_id = ? OR fichajes.empleado_id = ?", usuarioID, usuarioID).
+			Where("(e.supervisor_id = ? OR fichajes.empleado_id = ?) ", usuarioID, usuarioID).
 			Find(&fichajes).Error
-		if err != nil {
+		if err != nil && err != gorm.ErrRecordNotFound {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar fichajes"})
 			return
 		}
 
 	case "empleado":
-		// 2b) Empleado normal: solo sus fichajes
 		err := db.
 			Where("empleado_id = ?", usuarioID).
 			Find(&fichajes).Error
-		if err != nil {
+		if err != nil && err != gorm.ErrRecordNotFound {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar fichajes"})
 			return
 		}
 
 	default:
-		// 2c) Cualquier otro rol (por si tuvieras más) no autorizado
 		c.JSON(http.StatusForbidden, gin.H{"error": "Rol no autorizado para listar fichajes"})
 		return
 	}
 
-	// 3) Devolver el slice de fichajes (vacío o con registros)
+	// 3) Antes de enviar, formateamos cada registro
+	for i := range fichajes {
+		fichajes[i].FormatearFechas()
+	}
+
+	// 4) Devolvemos el slice completo, con campos EntradaStr y SalidaStr ya rellenos
 	c.JSON(http.StatusOK, fichajes)
 }
 
