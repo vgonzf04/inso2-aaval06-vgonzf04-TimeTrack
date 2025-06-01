@@ -22,6 +22,7 @@ import { TimerButton } from "@/components/timer-button"
 import { toast } from "sonner"
 
 export default function Page() {
+  const [rol, setRol] = useState(null)
   const router = useRouter()
 
   const [fichajes, setFichajes] = useState([])
@@ -31,6 +32,8 @@ export default function Page() {
 
   // 1. Al montar, cargamos de golpe fichajes y vacaciones
   useEffect(() => {
+    const r = localStorage.getItem("rol")
+    setRol(r)
     async function fetchData() {
       try {
         // --- CARGAR FICHAJES ---
@@ -110,13 +113,28 @@ export default function Page() {
 
   // 3. (Opcional) Callback para fichaje cerrado
   function handleFichajeCerrado(fichajeCerradoCrudo) {
-    // Si quieres reflejar en la UI algo al cerrar el fichaje,
-    // por ejemplo cambiar el estado de esa fila o moverlo a otra tabla,
-    // puedes manejarlo aquí.
-    toast.success("Fichaje cerrado correctamente")
-    // En este ejemplo no modificamos el array de fichajes abiertos,
-    // pero podrías, p.ej., volver a llamar a fetchData() o filtrar.
+  // 1) Aplanamos el objeto crudo al mismo formato que usamos en la tabla
+  const fichajeFlat = {
+    id: fichajeCerradoCrudo.id,
+    empleado: fichajeCerradoCrudo.empleado?.nombre || "—",
+    entrada: fichajeCerradoCrudo.entrada || "—",
+    salida: fichajeCerradoCrudo.salida || "—",
+    latitud: fichajeCerradoCrudo.latitud ?? "—",
+    longitud: fichajeCerradoCrudo.longitud ?? "—",
+    ubicacion: fichajeCerradoCrudo.ubicacion || "—",
   }
+
+  // 2) Recorremos el array de fichajes y reemplazamos solo el que coincida en ID
+  setFichajes((prev) =>
+    prev.map((f) =>
+      f.id === fichajeFlat.id
+        ? { ...f, salida: fichajeFlat.salida } // actualizamos únicamente "salida"
+        : f
+    )
+  )
+
+  toast.success("Fichaje cerrado correctamente")
+}
 
   if (loading) {
     return (
@@ -164,50 +182,59 @@ export default function Page() {
     { header: "Estado", accessorKey: "estado" },
   ]
 
-  return (
-    <SidebarProvider>
-      <AppSidebar />
-      <SidebarInset>
-        <header className="bg-background sticky top-0 flex h-16 shrink-0 items-center gap-2 border-b px-4">
-          <SidebarTrigger className="-ml-1" />
-          <Separator
-            orientation="vertical"
-            className="mr-2 data-[orientation=vertical]:h-4"
-          />
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbPage>Dashboard</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
-          {/* Pasamos ambos callbacks a TimerButton */}
-          <TimerButton
-            onFichajeCreado={handleFichajeCreado}
-            onFichajeCerrado={handleFichajeCerrado}
-          />
-        </header>
+return (
+  <SidebarProvider>
+    <AppSidebar />
+    <SidebarInset>
+      <header className="bg-background sticky top-0 flex h-16 shrink-0 items-center gap-2 border-b px-4">
+        <SidebarTrigger className="-ml-1" />
+        <Separator
+          orientation="vertical"
+          className="mr-2 data-[orientation=vertical]:h-4"
+        />
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbPage>Dashboard</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
 
-        <div className="flex flex-1 flex-col gap-4 p-4">
-          {/* DataTable de Fichajes */}
-          <section className="mb-8">
-            <h2 className="text-2xl font-semibold mb-4">Listado de Fichajes</h2>
-            <div className="overflow-x-auto">
-              <DataTable data={fichajes} columns={fichajesColumns} />
-            </div>
-          </section>
+        {/* 🔹 Botón visible solo si eres supervisor */}
+        {rol === "supervisor" && (
+          <button type="button"
+            onClick={() => router.push("/admin")}
+            className="ml-auto px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Ir a Administración
+          </button>
+        )}
 
-          {/* DataTable de Vacaciones */}
-          <section>
-            <h2 className="text-2xl font-semibold mb-4">
-              Vacaciones Solicitadas
-            </h2>
-            <div className="overflow-x-auto">
-              <DataTable data={vacaciones} columns={vacacionesColumns} />
-            </div>
-          </section>
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
-  )
+        <TimerButton
+          onFichajeCreado={handleFichajeCreado}
+          onFichajeCerrado={handleFichajeCerrado}
+        />
+      </header>
+
+      <div className="flex flex-1 flex-col gap-4 p-4">
+        {/* DataTable de Fichajes */}
+        <section className="mb-8">
+          <h2 className="text-2xl font-semibold mb-4">Listado de Fichajes</h2>
+          <div className="overflow-x-auto">
+            <DataTable data={fichajes} columns={fichajesColumns} />
+          </div>
+        </section>
+
+        {/* DataTable de Vacaciones */}
+        <section>
+          <h2 className="text-2xl font-semibold mb-4">Vacaciones Solicitadas</h2>
+          <div className="overflow-x-auto">
+            <DataTable data={vacaciones} columns={vacacionesColumns} />
+          </div>
+        </section>
+      </div>
+    </SidebarInset>
+  </SidebarProvider>
+)
 }
+
