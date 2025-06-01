@@ -131,7 +131,6 @@ function TableCellViewer({ item }) {
         <div className="flex flex-col gap-4 overflow-y-auto px-4 text-sm">
           {!isMobile && (
             <>
-              {/* Aquí podrías agregar tu gráfico con recharts si quieres */}
               <div className="grid gap-2">
                 <div className="flex gap-2 leading-none font-medium">
                   Trending up by 5.2% this month <IconTrendingUp className="size-4" />
@@ -243,11 +242,15 @@ function DraggableRow({ row }) {
   )
 }
 
-export function DataTable({
-  data: initialData,
-  columns: columnDefinitions,
-}) {
+export function DataTable({ data: initialData, columns: columnDefinitions }) {
+  // 1) Estado interno para filas, inicializado con la prop
   const [data, setData] = React.useState(() => initialData)
+
+  // 2) Cuando cambie initialData (prop), actualizamos el estado interno 'data'
+  React.useEffect(() => {
+    setData(initialData)
+  }, [initialData])
+
   const [rowSelection, setRowSelection] = React.useState({})
   const [columnVisibility, setColumnVisibility] = React.useState({})
   const [columnFilters, setColumnFilters] = React.useState([])
@@ -263,10 +266,7 @@ export function DataTable({
     useSensor(KeyboardSensor, {})
   )
 
-  const dataIds = React.useMemo(
-    () => data?.map(({ id }) => id) || [],
-    [data]
-  )
+  const dataIds = React.useMemo(() => data?.map(({ id }) => id) || [], [data])
 
   const table = useReactTable({
     data,

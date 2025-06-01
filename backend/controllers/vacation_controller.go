@@ -148,76 +148,43 @@ func ListarVacaciones(c *gin.Context) {
     // 4) Responder con mis vacaciones
     c.JSON(http.StatusOK, vacas)
 }
-
 func ListarVacacionesEmpleados(c *gin.Context) {
-	// 1) Obtener usuario_id y rol_usuario del contexto
-	idRaw, existsID := c.Get("usuario_id")
-	rolRaw, existsRol := c.Get("rol_usuario")
-	if !existsID || !existsRol {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
-		return
-	}
-	usuarioID, okID := idRaw.(uint)
-	rolUsuario, okRol := rolRaw.(string)
-	if !okID || !okRol {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
-		return
-	}
+    // 1) Obtener usuario_id y rol_usuario del contexto
+    idRaw, existsID := c.Get("usuario_id")
+    rolRaw, existsRol := c.Get("rol_usuario")
+    if !existsID || !existsRol {
+        c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
+        return
+    }
+    usuarioID, okID := idRaw.(uint)
+    rolUsuario, okRol := rolRaw.(string)
+    if !okID || !okRol {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
+        return
+    }
 
-	var vacas []models.Vacacion
-	db := config.DB.Preload("Empleado")
+    if rolUsuario != "supervisor" {
+        c.JSON(http.StatusForbidden, gin.H{"error": "Solo supervisores pueden ver las vacacione s de empleados"})
+        return
+    }
 
-	// 2) Filtrado según rol
-	switch rolUsuario {
-	case "supervisor":
-		db = db.Joins("JOIN empleados e ON e.id = vacacions.empleado_id").
-			Where("e.supervisor_id = ? OR vacacions.empleado_id = ?", usuarioID, usuarioID)
-	case "empleado":
-		db = db.Where("empleado_id = ?", usuarioID)
-	default:
-		c.JSON(http.StatusForbidden, gin.H{"error": "Rol no autorizado para listar vacaciones"})
-		return
-	}
+    var vacas []models.Vacacion
+    if err := config.DB.
+        Preload("Empleado").
+        Joins("JOIN empleados e ON e.id = vacacions.empleado_id").
+        Where("e.supervisor_id = ?", usuarioID).
+        Find(&vacas).Error; err != nil && err != gorm.ErrRecordNotFound {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar vacacione s de empleados"})
+        return
+    }
 
-	// 3) Filtros opcionales
-	if empleadoIDStr := c.Query("empleado_id"); empleadoIDStr != "" {
-		if empIDUint64, err := strconv.ParseUint(empleadoIDStr, 10, 32); err == nil {
-			empID := uint(empIDUint64)
-			db = db.Where("empleado_id = ?", empID)
-		} else {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Parámetro 'empleado_id' inválido"})
-			return
-		}
-	}
-	if estado := c.Query("estado"); estado != "" {
-		db = db.Where("estado = ?", estado)
-	}
-	if desde := c.Query("desde"); desde != "" {
-		if t, err := time.Parse("2006-01-02", desde); err == nil {
-			db = db.Where("fin >= ?", t)
-		} else {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Parámetro 'desde' inválido. Formato: YYYY-MM-DD"})
-			return
-		}
-	}
-	if hasta := c.Query("hasta"); hasta != "" {
-		if t, err := time.Parse("2006-01-02", hasta); err == nil {
-			db = db.Where("inicio <= ?", t)
-		} else {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Parámetro 'hasta' inválido. Formato: YYYY-MM-DD"})
-			return
-		}
-	}
+    for i := range vacas {
+        vacas[i].FormatearFechas()
+    }
 
-	// 4) Ejecutar consulta
-	if err := db.Find(&vacas).Error; err != nil && err != gorm.ErrRecordNotFound {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar solicitudes de vacaciones"})
-		return
-	}
-
-	// 5) Responder con el slice
-	c.JSON(http.StatusOK, vacas)
+    c.JSON(http.StatusOK, vacas)
 }
+
 
 // AprobarVacacion cambia el estado de la solicitud a "aprobada"
 // AprobarVacacion permite que sólo un supervisor apruebe una solicitud

@@ -130,7 +130,7 @@ func CrearEmpleado(c *gin.Context) {
 		nuevo.Rol = "empleado"
 	} else if rol == "supervisor" {
 		nuevo.Rol = "supervisor"
-		nuevo.SupervisorID = nil
+		
 	} else {
 		// Si se envía un rol inválido, podrías rechazarlo también
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Rol inválido. Solo se permite 'Empleado' o 'Supervisor'"})
@@ -138,7 +138,7 @@ func CrearEmpleado(c *gin.Context) {
 	}
 
 	// ✅ Si el rol es "Empleado", validar que el supervisor exista y sea Supervisor
-	if nuevo.Rol == "empleado" && nuevo.SupervisorID != nil {
+	if nuevo.SupervisorID != nil {
 		var supervisor models.Empleado
 		if err := config.DB.First(&supervisor, *nuevo.SupervisorID).Error; err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "El supervisor indicado no existe"})
@@ -149,14 +149,15 @@ func CrearEmpleado(c *gin.Context) {
 			return
 		}
 
-		result := config.DB.Create(&nuevo)
+		
+	}
+	result := config.DB.Create(&nuevo)
 		if result.Error != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 			return
 		}
 
 		c.JSON(http.StatusCreated, nuevo)
-	}
 }
 
 // ActualizarEmpleado actualiza un empleado existente

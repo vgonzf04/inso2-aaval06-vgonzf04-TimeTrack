@@ -1,3 +1,5 @@
+// app/dashboard/page.js
+
 "use client"
 
 import { useState, useEffect } from "react"
@@ -30,26 +32,34 @@ export default function Page() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  // 1. Al montar, cargamos de golpe fichajes y vacaciones
+  // 1) Al montar, pedimos /me, luego fichajes y vacaciones
   useEffect(() => {
-    const r = localStorage.getItem("rol")
-    setRol(r)
-    async function fetchData() {
+    async function pedirRolYDatos() {
       try {
-        // --- CARGAR FICHAJES ---
+        // a) Obtener rol
+        const resMe = await fetch("http://localhost:3000/me", {
+          method: "GET",
+          credentials: "include",
+        })
+        if (!resMe.ok) {
+          router.push("/login")
+          return
+        }
+        const dataMe = await resMe.json()
+        setRol(dataMe.rol) // "supervisor" | "empleado"
+
+        // b) Cargar fichajes
         const resF = await fetch("http://localhost:3000/fichajes", {
           method: "GET",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
         })
         if (resF.status === 401 || resF.status === 403) {
-          setLoading(false)
           router.push("/login")
           return
         }
         if (!resF.ok) throw new Error("Error al cargar fichajes")
         const dataF = await resF.json()
-        // Aplanamos
         const fichajesFlat = dataF.map((f) => ({
           id: f.id,
           empleado: f.empleado?.nombre || "—",
@@ -58,18 +68,16 @@ export default function Page() {
           latitud: f.latitud ?? "—",
           longitud: f.longitud ?? "—",
           ubicacion: f.ubicacion || "—",
-          // podrías añadir más campos si tu JSON los trae
         }))
         setFichajes(fichajesFlat)
 
-        // --- CARGAR VACACIONES ---
+        // c) Cargar vacaciones
         const resV = await fetch("http://localhost:3000/vacaciones", {
           method: "GET",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
         })
         if (resV.status === 401 || resV.status === 403) {
-          setLoading(false)
           router.push("/login")
           return
         }
@@ -78,9 +86,9 @@ export default function Page() {
         const vacasFlat = dataV.map((v) => ({
           id: v.id,
           empleado: v.empleado?.nombre || "—",
-          fechaInicio: v.Inicio ?? v.inicio ?? "—",
-          fechaFin: v.Fin ?? v.fin ?? "—",
-          estado: v.Estado ?? v.estado ?? "—",
+          fechaInicio: v.inicioStr ?? v.Inicio ?? "—",
+          fechaFin: v.finStr ?? v.Fin ?? "—",
+          estado: v.estado || v.Estado || "—",
         }))
         setVacaciones(vacasFlat)
 
@@ -91,12 +99,12 @@ export default function Page() {
         setLoading(false)
       }
     }
-    fetchData()
+
+    pedirRolYDatos()
   }, [router])
 
-  // 2. Callback para añadir un fichaje nuevo a la tabla
+  // 2) Callback para fichaje creado
   function handleFichajeCreado(nuevoFichajeCrudo) {
-    // “Aplanamos” el objeto crudo exactamente igual que en fetchData:
     const fichajeFlat = {
       id: nuevoFichajeCrudo.id,
       empleado: nuevoFichajeCrudo.empleado?.nombre || "—",
@@ -106,35 +114,48 @@ export default function Page() {
       longitud: nuevoFichajeCrudo.longitud ?? "—",
       ubicacion: nuevoFichajeCrudo.ubicacion || "—",
     }
-    // Lo añadimos al final del array fichajes
     setFichajes((prev) => [...prev, fichajeFlat])
     toast.success("Fichaje añadido a la tabla")
   }
 
-  // 3. (Opcional) Callback para fichaje cerrado
+  // 3) Callback para fichaje cerrado
   function handleFichajeCerrado(fichajeCerradoCrudo) {
-  // 1) Aplanamos el objeto crudo al mismo formato que usamos en la tabla
-  const fichajeFlat = {
-    id: fichajeCerradoCrudo.id,
-    empleado: fichajeCerradoCrudo.empleado?.nombre || "—",
-    entrada: fichajeCerradoCrudo.entrada || "—",
-    salida: fichajeCerradoCrudo.salida || "—",
-    latitud: fichajeCerradoCrudo.latitud ?? "—",
-    longitud: fichajeCerradoCrudo.longitud ?? "—",
-    ubicacion: fichajeCerradoCrudo.ubicacion || "—",
+    const fichajeFlat = {
+      id: fichajeCerradoCrudo.id,
+      salida: fichajeCerradoCrudo.salida || "—",
+    }
+    setFichajes((prev) =>
+      prev.map((f) =>
+        f.id === fichajeFlat.id ? { ...f, salida: fichajeFlat.salida } : f
+      )
+    )
+    toast.success("Fichaje cerrado correctamente")
   }
 
-  // 2) Recorremos el array de fichajes y reemplazamos solo el que coincida en ID
-  setFichajes((prev) =>
-    prev.map((f) =>
-      f.id === fichajeFlat.id
-        ? { ...f, salida: fichajeFlat.salida } // actualizamos únicamente "salida"
-        : f
-    )
-  )
+  // 4) Callback para vacación creada (lo llamará DatePicker)
+  function handleVacacionCreada(nuevaVacacionCruda) {
+   const vacaFlat = {
+      id: nuevaVacacionCruda.id,
+      empleado: nuevaVacacionCruda.empleado?.nombre ?? "—",
+      fechaInicio:
+        nuevaVacacionCruda.inicioStr ??
+        nuevaVacacionCruda.Inicio ??
+        nuevaVacacionCruda.inicio ??
+        "—",
+      fechaFin:
+        nuevaVacacionCruda.finStr ??
+        nuevaVacacionCruda.Fin ??
+        nuevaVacacionCruda.fin ??
+        "—",
+      estado:
+        nuevaVacacionCruda.estado ??
+        nuevaVacacionCruda.Estado ??
+        "—",
+    }
 
-  toast.success("Fichaje cerrado correctamente")
-}
+    setVacaciones((prev) => [...prev, vacaFlat])
+    toast.success("Solicitud de vacación enviada")
+  }
 
   if (loading) {
     return (
@@ -142,7 +163,7 @@ export default function Page() {
         <AppSidebar />
         <SidebarInset>
           <div className="flex items-center justify-center h-screen w-full">
-            <p className="text-lg">Cargando datos del dashboard...</p>
+            <p className="text-lg">Cargando datos del dashboard…</p>
           </div>
         </SidebarInset>
       </SidebarProvider>
@@ -162,13 +183,11 @@ export default function Page() {
     )
   }
 
-  // 4. Definimos las columnas planas para DataTable
   const fichajesColumns = [
     { header: "ID", accessorKey: "id" },
     { header: "Empleado", accessorKey: "empleado" },
     { header: "Entrada", accessorKey: "entrada" },
     { header: "Salida", accessorKey: "salida" },
-
     { header: "Latitud", accessorKey: "latitud" },
     { header: "Longitud", accessorKey: "longitud" },
     { header: "Ubicación", accessorKey: "ubicacion" },
@@ -182,59 +201,60 @@ export default function Page() {
     { header: "Estado", accessorKey: "estado" },
   ]
 
-return (
-  <SidebarProvider>
-    <AppSidebar />
-    <SidebarInset>
-      <header className="bg-background sticky top-0 flex h-16 shrink-0 items-center gap-2 border-b px-4">
-        <SidebarTrigger className="-ml-1" />
-        <Separator
-          orientation="vertical"
-          className="mr-2 data-[orientation=vertical]:h-4"
-        />
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbPage>Dashboard</BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
+  return (
+    <SidebarProvider>
+      <AppSidebar />
+      <SidebarInset>
+        <header className="bg-background sticky top-0 flex h-16 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger className="-ml-1" />
+          <Separator
+            orientation="vertical"
+            className="mr-2 data-[orientation=vertical]:h-4"
+          />
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbPage>Dashboard</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
 
-        {/* 🔹 Botón visible solo si eres supervisor */}
-        {rol === "supervisor" && (
-          <button type="button"
-            onClick={() => router.push("/admin")}
-            className="ml-auto px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            Ir a Administración
-          </button>
-        )}
+          {rol === "supervisor" && (
+            <button
+              type="button"
+              onClick={() => router.push("/admin")}
+              className="ml-auto px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Ir a Administración
+            </button>
+          )}
 
-        <TimerButton
-          onFichajeCreado={handleFichajeCreado}
-          onFichajeCerrado={handleFichajeCerrado}
-        />
-      </header>
+          <TimerButton
+            onFichajeCreado={handleFichajeCreado}
+            onFichajeCerrado={handleFichajeCerrado}
+          />
+        </header>
 
-      <div className="flex flex-1 flex-col gap-4 p-4">
-        {/* DataTable de Fichajes */}
-        <section className="mb-8">
-          <h2 className="text-2xl font-semibold mb-4">Listado de Fichajes</h2>
-          <div className="overflow-x-auto">
-            <DataTable data={fichajes} columns={fichajesColumns} />
-          </div>
-        </section>
+        <div className="flex flex-1 flex-col gap-4 p-4">
+          {/* ──────── Tabla de Fichajes ──────── */}
+          <section className="mb-8">
+            <h2 className="text-2xl font-semibold mb-4">Listado de Fichajes</h2>
+            <div className="overflow-x-auto">
+              <DataTable data={fichajes} columns={fichajesColumns} />
+            </div>
+          </section>
 
-        {/* DataTable de Vacaciones */}
-        <section>
-          <h2 className="text-2xl font-semibold mb-4">Vacaciones Solicitadas</h2>
-          <div className="overflow-x-auto">
-            <DataTable data={vacaciones} columns={vacacionesColumns} />
-          </div>
-        </section>
-      </div>
-    </SidebarInset>
-  </SidebarProvider>
-)
+          {/* ──────── Tabla de Vacaciones ──────── */}
+          <section className="mb-8">
+            <h2 className="text-2xl font-semibold mb-4">
+              Vacaciones Solicitadas
+            </h2>
+            <div className="overflow-x-auto">
+              <DataTable data={vacaciones} columns={vacacionesColumns} />
+            </div>
+          </section>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
+  )
 }
-

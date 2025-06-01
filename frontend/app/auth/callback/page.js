@@ -14,10 +14,13 @@ export default function GoogleCallbackPage() {
       fetch(`http://localhost:3000/auth/google/callback?code=${code}`)
         .then(res => res.json())
         .then(data => {
+
           const rol = data.usuario?.rol
           if (rol) {
             localStorage.setItem("rol", rol)
             router.push("/admin")
+            //console.log(">> [Callback Google] respuesta completa:", data)
+
           } else {
             console.error("No se encontró el rol en la respuesta:", data)
           }

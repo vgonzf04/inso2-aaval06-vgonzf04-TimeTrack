@@ -18,6 +18,47 @@ import (
 	"gorm.io/gorm"
 )
 
+func Me(c *gin.Context) {
+    // 1) Leemos la cookie “token”
+    tokenString, err := c.Cookie("token")
+    if err != nil {
+        c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
+        return
+    }
+
+    // 2) Parseamos y validamos el JWT con la misma secret
+    token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+        return []byte(os.Getenv("JWT_SECRET")), nil
+    })
+    if err != nil || !token.Valid {
+        c.JSON(http.StatusUnauthorized, gin.H{"error": "Token inválido"})
+        return
+    }
+
+    // 3) Extraemos los claims (mapa) y sacamos “rol”
+    claims, ok := token.Claims.(jwt.MapClaims)
+    if !ok {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno leyendo token"})
+        return
+    }
+    rolInterfaz, ok := claims["rol"]
+    if !ok {
+        c.JSON(http.StatusUnauthorized, gin.H{"error": "No se encontró rol en claims"})
+        return
+    }
+    rol, ok := rolInterfaz.(string)
+    if !ok {
+        c.JSON(http.StatusUnauthorized, gin.H{"error": "Formato de rol inválido en token"})
+        return
+    }
+
+    // 4) Devolvemos JSON con el rol
+    c.JSON(http.StatusOK, gin.H{
+        "rol": rol,
+    })
+}
+
+
 func GoogleLogin(c *gin.Context) {
 	url := config.GoogleOAuthConfig.AuthCodeURL("random-state", oauth2.AccessTypeOffline)
 	c.Redirect(http.StatusTemporaryRedirect, url)
@@ -81,20 +122,22 @@ func GoogleCallback(c *gin.Context) {
 	}
 
 	// 5) Crear las claims del JWT, incluyendo el campo "rol"
-	claims := jwt.MapClaims{
-		"sub": emp.ID,                                // ID del empleado en BD
-		"rol": emp.Rol,                               // rol: "empleado" o "supervisor"
-		"exp": time.Now().Add(time.Hour * 24).Unix(), // expira en 24h
-	}
-	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	// 6) Firmar el token con tu JWT_SECRET (defínelo en .env)
-	tokenString, err := jwtToken.SignedString([]byte(os.Getenv("JWT_SECRET")))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al generar token JWT"})
-		return
-	}
+	// … tras crear o recuperar emp de la BD …
+claims := jwt.MapClaims{
+    "sub": emp.ID,
+    "rol": emp.Rol,
+    "exp": time.Now().Add(time.Hour * 24).Unix(),
+}
+jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+tokenString, err := jwtToken.SignedString([]byte(os.Getenv("JWT_SECRET")))
+if err != nil {
+    c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al generar token JWT"})
+    return
+}
 
-	c.SetCookie("token", tokenString, 3600, "/", "", false, true) // cookie segura y HTTPOnly
-	c.Redirect(http.StatusFound, "http://localhost:3001/dashboard")
+c.SetCookie("token", tokenString, 3600, "/", "", false, true)
+// Hasta aquí guardas el JWT en la cookie “token”
+c.Redirect(http.StatusFound, "http://localhost:3001/dashboard")
+
 	
 }
