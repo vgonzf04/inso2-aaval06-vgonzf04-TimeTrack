@@ -1,0 +1,1017 @@
+openapi: 3.0.3
+info:
+  title: API de Gestión de Empleados, Fichajes, Vacaciones y Dashboard
+  version: 1.0.0
+  description: |
+    Este documento describe la definición de la API para la gestión de autenticación con Google + JWT, 
+    CRUD de empleados, control de fichajes, gestión de vacaciones y rutas de dashboard/estadísticas.
+servers:
+  - url: /
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    # ---------------------------------
+    # Schemas de Datos
+    # ---------------------------------
+
+    Empleado:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 5
+        nombre:
+          type: string
+          example: "Ana López"
+        email:
+          type: string
+          format: email
+          example: "ana.lopez@example.com"
+        cargo:
+          type: string
+          example: "Desarrolladora"
+        fecha_contratacion:
+          type: string
+          format: date-time
+          example: "2025-06-15T00:00:00Z"
+        supervisor_id:
+          type: integer
+          nullable: true
+          example: 2
+        rol:
+          type: string
+          enum:
+            - empleado
+            - supervisor
+          example: "empleado"
+      required:
+        - id
+        - nombre
+        - email
+        - cargo
+        - fecha_contratacion
+        - rol
+
+    UsuarioResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 5
+        nombre:
+          type: string
+          example: "María García"
+        email:
+          type: string
+          format: email
+          example: "maria.garcia@example.com"
+        rol:
+          type: string
+          enum:
+            - empleado
+            - supervisor
+          example: "empleado"
+      required:
+        - id
+        - nombre
+        - email
+        - rol
+
+    AuthCallbackResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: "JWT generado para la sesión"
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        usuario:
+          $ref: '#/components/schemas/UsuarioResponse'
+      required:
+        - token
+        - usuario
+
+    EmpleadoCreateRequest:
+      type: object
+      properties:
+        nombre:
+          type: string
+          example: "Ana López"
+        email:
+          type: string
+          format: email
+          example: "ana.lopez@example.com"
+        cargo:
+          type: string
+          example: "Desarrolladora"
+        fecha_contratacion:
+          type: string
+          format: date
+          example: "2025-06-15"
+        supervisor_id:
+          type: integer
+          nullable: true
+          example: 2
+        rol:
+          type: string
+          enum:
+            - empleado
+            - supervisor
+          example: "empleado"
+      required:
+        - nombre
+        - email
+        - cargo
+        - fecha_contratacion
+        - rol
+
+    EmpleadoUpdateRequest:
+      type: object
+      properties:
+        nombre:
+          type: string
+          example: "Ana López Pérez"
+        email:
+          type: string
+          format: email
+          example: "ana.lopez@example.com"
+        cargo:
+          type: string
+          example: "Analista"
+        fecha_contratacion:
+          type: string
+          format: date
+          example: "2025-06-15"
+        supervisor_id:
+          type: integer
+          nullable: true
+          example: 2
+        rol:
+          type: string
+          enum:
+            - empleado
+            - supervisor
+          example: "supervisor"
+      description: "Campos opcionales para actualización (parcial)."
+
+    Fichaje:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 21
+        empleado_id:
+          type: integer
+          example: 5
+        empleado:
+          $ref: '#/components/schemas/Empleado'
+        entrada:
+          type: string
+          format: date-time
+          example: "2025-06-01T08:30:00Z"
+        salida:
+          type: string
+          format: date-time
+          nullable: true
+          example: null
+        latitud:
+          type: number
+          format: float
+          example: 40.416775
+        longitud:
+          type: number
+          format: float
+          example: -3.703790
+        ubicacion:
+          type: string
+          example: "C78W+PF Madrid, Spain"
+      required:
+        - id
+        - empleado_id
+        - empleado
+        - entrada
+        - latitud
+        - longitud
+        - ubicacion
+
+    FichajeCreateRequest:
+      type: object
+      properties:
+        empleado_id:
+          type: integer
+          example: 5
+        latitud:
+          type: number
+          format: float
+          example: 40.416775
+        longitud:
+          type: number
+          format: float
+          example: -3.703790
+        ubicacion:
+          type: string
+          example: "C78W+PF Madrid, Spain"
+      required:
+        - empleado_id
+        - latitud
+        - longitud
+        - ubicacion
+
+    Vacacion:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 12
+        empleado_id:
+          type: integer
+          example: 5
+        empleado:
+          $ref: '#/components/schemas/Empleado'
+        inicio:
+          type: string
+          format: date-time
+          example: "2025-07-10T00:00:00Z"
+        fin:
+          type: string
+          format: date-time
+          example: "2025-07-15T00:00:00Z"
+        estado:
+          type: string
+          enum:
+            - pendiente
+            - aprobada
+            - rechazada
+          example: "pendiente"
+      required:
+        - id
+        - empleado_id
+        - empleado
+        - inicio
+        - fin
+        - estado
+
+    VacacionCreateRequest:
+      type: object
+      properties:
+        empleado_id:
+          type: integer
+          example: 5
+        inicio:
+          type: string
+          format: date
+          example: "2025-07-10"
+        fin:
+          type: string
+          format: date
+          example: "2025-07-15"
+      required:
+        - empleado_id
+        - inicio
+        - fin
+
+    DashboardHorasPeriodoItem:
+      type: object
+      properties:
+        empleado_id:
+          type: integer
+          example: 5
+        nombre:
+          type: string
+          example: "Ana López"
+        total_horas:
+          type: number
+          format: float
+          example: 160.0
+      required:
+        - empleado_id
+        - nombre
+        - total_horas
+
+    DashboardFichajesDiaResponse:
+      type: object
+      properties:
+        dia:
+          type: string
+          format: date
+          example: "2025-06-01"
+        fichajes_abiertos:
+          type: integer
+          example: 7
+        fichajes_cerrados:
+          type: integer
+          example: 12
+      required:
+        - dia
+        - fichajes_abiertos
+        - fichajes_cerrados
+
+    DashboardVacacionesEstadoItem:
+      type: object
+      properties:
+        estado:
+          type: string
+          enum:
+            - pendiente
+            - aprobada
+            - rechazada
+          example: "pendiente"
+        cantidad:
+          type: integer
+          example: 3
+      required:
+        - estado
+        - cantidad
+
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Descripción del error"
+      required:
+        - message
+
+  parameters:
+    EmpleadoIdPath:
+      name: id
+      in: path
+      description: "ID del empleado"
+      required: true
+      schema:
+        type: integer
+    FichajeIdPath:
+      name: id
+      in: path
+      description: "ID del fichaje"
+      required: true
+      schema:
+        type: integer
+    VacacionIdPath:
+      name: id
+      in: path
+      description: "ID de la vacación"
+      required: true
+      schema:
+        type: integer
+    QueryEmpleadoId:
+      name: empleado_id
+      in: query
+      description: "ID del empleado para filtrado"
+      required: false
+      schema:
+        type: integer
+    QueryEstado:
+      name: estado
+      in: query
+      description: "Estado de la vacación (pendiente, aprobada, rechazada)"
+      required: false
+      schema:
+        type: string
+        enum:
+          - pendiente
+          - aprobada
+          - rechazada
+    QueryDesde:
+      name: desde
+      in: query
+      description: "Fecha mínima para fin de vacación (YYYY-MM-DD)"
+      required: false
+      schema:
+        type: string
+        format: date
+    QueryHasta:
+      name: hasta
+      in: query
+      description: "Fecha máxima para inicio de vacación (YYYY-MM-DD)"
+      required: false
+      schema:
+        type: string
+        format: date
+    QueryInicioPeriodo:
+      name: inicio
+      in: query
+      description: "Fecha de inicio del período (YYYY-MM-DD)"
+      required: true
+      schema:
+        type: string
+        format: date
+    QueryFinPeriodo:
+      name: fin
+      in: query
+      description: "Fecha de fin del período (YYYY-MM-DD)"
+      required: true
+      schema:
+        type: string
+        format: date
+    QueryDia:
+      name: dia
+      in: query
+      description: "Día para estadísticas de fichajes (YYYY-MM-DD)"
+      required: true
+      schema:
+        type: string
+        format: date
+
+paths:
+  # ---------------------------------
+  # 1. Autenticación
+  # ---------------------------------
+
+  /auth/login:
+    get:
+      summary: Iniciar flujo OAuth con Google
+      description: |
+        Redirige al usuario a la pantalla de autorización de Google. El frontend debe abrir esta URL o hacer window.location = "/auth/google/login".
+      responses:
+        '302':
+          description: Redirección a Google OAuth
+
+  /auth/callback:
+    get:
+      summary: Callback de Google OAuth
+      description: |
+        Recibe el código de Google, intercambia por token, crea/actualiza usuario en BD y genera JWT.
+      parameters:
+        - name: code
+          in: query
+          description: "Código de autorización proporcionado por Google"
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Retorna JWT y datos del usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthCallbackResponse'
+        '500':
+          description: Error interno al intercambiar token o crear usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------
+  # 2. Empleados (requieren JWT)
+  # ---------------------------------
+
+  /empleados/:
+    post:
+      summary: Crear nuevo empleado/supervisor
+      description: |
+        Crea un nuevo empleado o supervisor. Solo rol=supervisor puede invocar.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmpleadoCreateRequest'
+      responses:
+        '201':
+          description: Empleado creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleado'
+        '400':
+          description: JSON mal formado o falta campo obligatorio
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token faltante o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Token no pertenece a un supervisor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email ya existe en BD
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      summary: Listar empleados asignados
+      description: |
+        Si rol=supervisor: devuelve empleados cuyo supervisor_id coincide con usuario_id y también su propio registro.
+        Si rol=empleado: devuelve únicamente su propio registro.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lista de empleados
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Empleado'
+        '401':
+          description: Token faltante o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /empleados/{id}:
+    get:
+      summary: Obtener datos de un empleado por ID
+      description: |
+        Solo rol=supervisor puede invocarla. El ID debe corresponder a un empleado cuyo supervisor_id = usuario_id.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EmpleadoIdPath'
+      responses:
+        '200':
+          description: Empleado encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleado'
+        '401':
+          description: Token faltante o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Token no es de un supervisor o no tiene acceso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Empleado no existe o no pertenece al supervisor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Actualizar datos de un empleado
+      description: |
+        Solo rol=supervisor puede invocarla. El ID debe corresponder a un empleado cuyo supervisor_id = usuario_id, o el propio supervisor para editarse.
+        El JSON de entrada puede contener campos opcionales para actualización parcial.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EmpleadoIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmpleadoUpdateRequest'
+      responses:
+        '200':
+          description: Empleado actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Empleado'
+        '400':
+          description: JSON inválido o rol no válido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token faltante o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Token no es supervisor o intenta editar a un empleado que no le pertenece
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Empleado no existe o no le pertenece
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Eliminar un empleado
+      description: |
+        Solo rol=supervisor puede invocarla. El ID debe corresponder a un empleado cuyo supervisor_id = usuario_id.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EmpleadoIdPath'
+      responses:
+        '204':
+          description: Empleado eliminado (sin contenido)
+        '401':
+          description: Token faltante o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Token no es supervisor o quiere borrar alguien que no le pertenece
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Empleado no existe o no le pertenece
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------
+  # 3. Fichajes
+  # ---------------------------------
+
+  /fichajes/:
+    post:
+      summary: Crear (abrir) un fichaje
+      description: |
+        Crea un nuevo registro de fichaje con entrada = now y salida = null. Cualquier usuario autenticado puede fichar.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FichajeCreateRequest'
+      responses:
+        '201':
+          description: Fichaje creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Fichaje'
+        '400':
+          description: JSON mal formado o faltan campos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token faltante o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      summary: Listar fichajes
+      description: |
+        Si rol=empleado: devuelve solo sus fichajes. Si rol=supervisor: devuelve fichajes de subordinados y propios. Preload de relación Empleado.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lista de fichajes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Fichaje'
+        '401':
+          description: Token faltante o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /fichajes/{id}/cerrar:
+    put:
+      summary: Cerrar un fichaje (indicar hora de salida)
+      description: |
+        Cierra el fichaje propio fijando salida = now. Solo permite cerrar fichajes del propio usuario.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/FichajeIdPath'
+      responses:
+        '200':
+          description: Fichaje actualizado con hora de salida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Fichaje'
+        '400':
+          description: Salida ya estaba puesta (state "cerrado")
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token faltante o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Fichaje no existe o no corresponde al usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------
+  # 4. Vacaciones
+  # ---------------------------------
+
+  /vacaciones/:
+    post:
+      summary: Crear (solicitar) una vacación
+      description: |
+        Si rol=empleado: crea vacación con estado="pendiente".
+        Si rol=supervisor: crea vacación con estado="aprobada" (solo para subordinados).
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VacacionCreateRequest'
+      responses:
+        '201':
+          description: Vacación creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vacacion'
+        '400':
+          description: JSON inválido o fecha mal formateada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token faltante o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Supervisor intenta crear vacación para empleado que no le pertenece
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: empleado_id no existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      summary: Listar vacaciones
+      description: |
+        Si rol=empleado: devuelve solo sus vacacione s.
+        Si rol=supervisor: devuelve vacacione s de subordinados y propias.
+        Admite filtros opcionales: empleado_id (validar que pertenezca a supervisor), estado, desde, hasta.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/QueryEmpleadoId'
+        - $ref: '#/components/parameters/QueryEstado'
+        - $ref: '#/components/parameters/QueryDesde'
+        - $ref: '#/components/parameters/QueryHasta'
+      responses:
+        '200':
+          description: Lista de vacacione s
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Vacacion'
+        '400':
+          description: Parámetro de fecha o ID mal formado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Supervisor filtra con empleado_id que no le pertenece
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /vacaciones/{id}/aprobar:
+    put:
+      summary: Aprobar solicitud de vacación
+      description: |
+        Solo rol=supervisor puede invocar. El ID debe corresponder a una vacación de un subordinado en estado="pendiente".
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VacacionIdPath'
+      responses:
+        '200':
+          description: Vacación aprobada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vacacion'
+        '400':
+          description: Vacación ya en estado distinto de "pendiente"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token faltante o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Token no es supervisor o vacación no pertenece a sus subordinados
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Vacación no existe o no corresponde al supervisor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /vacaciones/{id}/rechazar:
+    put:
+      summary: Rechazar solicitud de vacación
+      description: |
+        Solo rol=supervisor puede invocar. El ID debe corresponder a una vacación de un subordinado en estado="pendiente".
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VacacionIdPath'
+      responses:
+        '200':
+          description: Vacación rechazada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vacacion'
+        '400':
+          description: Vacación ya en estado distinto de "pendiente"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token faltante o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Token no es supervisor o vacación no pertenece a sus subordinados
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Vacación no existe o no corresponde al supervisor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ---------------------------------
+  # 5. Dashboard / Estadísticas (solo supervisor)
+  # ---------------------------------
+
+  /dashboard/horas-periodo:
+    get:
+      summary: Horas trabajadas por empleado en un período
+      description: |
+        Calcula la suma de horas (salida - entrada) para cada empleado. Si se especifica empleado_id, retorna solo para ese empleado (validar pertenencia). Si no, agrupa todos los subordinados y al supervisor.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/QueryInicioPeriodo'
+        - $ref: '#/components/parameters/QueryFinPeriodo'
+        - $ref: '#/components/parameters/QueryEmpleadoId'
+      responses:
+        '200':
+          description: Lista con total de horas por empleado
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DashboardHorasPeriodoItem'
+        '400':
+          description: Falta inicio o fin, formato incorrecto o empleado_id no numérico
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token faltante o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Token no es supervisor o empleado_id no pertenece a él
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /dashboard/fichajes-dia:
+    get:
+      summary: Número de fichajes abiertos y cerrados por día
+      description: |
+        Cuenta los fichajes abiertos (entrada en ese día + salida IS NULL) y cerrados (salida en ese día) de subordinados y propio supervisor.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/QueryDia'
+      responses:
+        '200':
+          description: Estadísticas de fichajes por día
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardFichajesDiaResponse'
+        '400':
+          description: Fecha no viene o formato incorrecto
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Token faltante o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Token no es supervisor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /dashboard/vacaciones-por-estado:
+    get:
+      summary: Vacaciones agrupadas por estado
+      description: |
+        Agrupa y cuenta cuántas vacacione s hay en cada estado ("pendiente", "aprobada", "rechazada") de subordinados y propio supervisor.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Conteo de vacacione s por estado
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DashboardVacacionesEstadoItem'
+        '401':
+          description: Token faltante o inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Token no es supervisor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

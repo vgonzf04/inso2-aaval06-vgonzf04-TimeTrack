@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: go_app
+    ports:
+      - "3000:3000"
+    environment:
+      DB_HOST: db
+      DB_USER: admin
+      DB_PASSWORD: admin123
+      DB_NAME: empleadosdb
+      DB_PORT: 5432
+      GOOGLE_CLIENT_ID: 69569086694-33m2eir7g9c032hqg4rheqvbla6vohgh.apps.googleusercontent.com
+      GOOGLE_CLIENT_SECRET: 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
+      GOOGLE_MAPS_API_KEY: AIzaSyBa0_LpeFehm5m3jaDeYiTYdeEX6dg89jQ
+      JWT_SECRET: qhfihgrgkjgnhanmhglhgutnbubefwrtahg
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: postgres:15
+    container_name: empleados_db
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+      POSTGRES_DB: empleadosdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "admin", "-d", "empleadosdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
