@@ -157,7 +157,6 @@ func ListarFichajes(c *gin.Context) {
         c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
         return
     }
-
     usuarioID, okID := idRaw.(uint)
     rolUsuario, okRol := rolRaw.(string)
     if !okID || !okRol {
@@ -171,33 +170,35 @@ func ListarFichajes(c *gin.Context) {
     switch rolUsuario {
     case "supervisor":
         // 2a) Supervisor: trae los fichajes de sus empleados y los suyos propios
-        // Hacemos JOIN con la tabla empleados para filtrar por supervisor_id
-        err := db.
+        if err := db.
             Joins("JOIN empleados e ON e.id = fichajes.empleado_id").
             Where("e.supervisor_id = ? OR fichajes.empleado_id = ?", usuarioID, usuarioID).
-            Find(&fichajes).Error
-        if err != nil {
+            Find(&fichajes).Error; err != nil {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar fichajes"})
             return
         }
 
     case "empleado":
         // 2b) Empleado normal: solo sus fichajes
-        err := db.
+        if err := db.
             Where("empleado_id = ?", usuarioID).
-            Find(&fichajes).Error
-        if err != nil {
+            Find(&fichajes).Error; err != nil {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar fichajes"})
             return
         }
 
     default:
-        // 2c) Cualquier otro rol (por si tuvieras más) no autorizado
+        // 2c) Cualquier otro rol no autorizado
         c.JSON(http.StatusForbidden, gin.H{"error": "Rol no autorizado para listar fichajes"})
         return
     }
 
-    // 3) Devolver el slice de fichajes (vacío o con registros)
+    // 3) Antes de enviar la respuesta, formatear fechas en cada registro
+    for i := range fichajes {
+        fichajes[i].FormatearFechas()
+    }
+
+    // 4) Devolver el slice de fichajes, ya con EntradaStr y SalidaStr rellenos
     c.JSON(http.StatusOK, fichajes)
 }
 

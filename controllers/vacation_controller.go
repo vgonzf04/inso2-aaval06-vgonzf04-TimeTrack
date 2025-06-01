@@ -12,34 +12,39 @@ import (
     "AppWebPruebaEmpleados/models"
 )
 
-// CrearVacacion crea una solicitud de vacaciones. Si quien la solicita es supervisor,
-// el estado será "aprobada"; si es empleado, quedará "pendiente". No se comprueban solapamientos.
+// CrearVacacion crea una solicitud de vacaciones.
+// - Si quien la solicita es supervisor, el estado se establece en "aprobada".  
+// - Si quien la solicita es empleado, queda en "pendiente".  
+// Además:
+// 1) Un supervisor puede crear para sí mismo o para cualquiera de sus subordinados.  
+// 2) Ningún usuario (empleado o supervisor) puede pedir vacaciones que se solapen con un período ya aprobado del mismo empleado.  
+// 3) En la respuesta, las fechas ("inicio" y "fin") se devuelven únicamente en formato "YYYY-MM-DD" (sin hora).
 func CrearVacacion(c *gin.Context) {
-    // 1. Cargar JSON de entrada
+    // 1. Leer JSON de entrada
     var input struct {
         EmpleadoID uint   `json:"empleado_id" binding:"required"`
-        Inicio     string `json:"inicio" binding:"required"`
-        Fin        string `json:"fin" binding:"required"`
+        Inicio     string `json:"inicio" binding:"required"` // espera "YYYY-MM-DD"
+        Fin        string `json:"fin" binding:"required"`    // espera "YYYY-MM-DD"
     }
     if err := c.ShouldBindJSON(&input); err != nil {
         c.JSON(http.StatusBadRequest, gin.H{"error": "JSON inválido o faltan campos"})
         return
     }
 
-    // 2. Parsear fechas "YYYY-MM-DD"
+    // 2. Parsear las fechas sin hora
     fechaInicio, err1 := time.Parse("2006-01-02", input.Inicio)
     fechaFin, err2 := time.Parse("2006-01-02", input.Fin)
     if err1 != nil || err2 != nil {
         c.JSON(http.StatusBadRequest, gin.H{"error": "Formato de fecha inválido. Debe ser YYYY-MM-DD"})
         return
     }
-    // 3. Validación: inicio <= fin
+    // Asegurar que fechaFin >= fechaInicio
     if fechaFin.Before(fechaInicio) {
         c.JSON(http.StatusBadRequest, gin.H{"error": "`fin` debe ser igual o posterior a `inicio`"})
         return
     }
 
-    // 4. Verificar que el empleado exista
+    // 3. Verificar que el empleado existe
     var emp models.Empleado
     if err := config.DB.First(&emp, input.EmpleadoID).Error; err != nil {
         if err == gorm.ErrRecordNotFound {
@@ -50,7 +55,7 @@ func CrearVacacion(c *gin.Context) {
         return
     }
 
-    // 5. Extraer rol y usuario_id del contexto
+    // 4. Extraer rol y usuario_id del contexto
     idRaw, existsID := c.Get("usuario_id")
     rolRaw, existsRol := c.Get("rol_usuario")
     if !existsID || !existsRol {
@@ -64,41 +69,75 @@ func CrearVacacion(c *gin.Context) {
         return
     }
 
-    // 6. Si es supervisor, verificar que pueda crear vacación para este empleado
+    // 5. Si es supervisor, verificar permiso para crear vacación para el EmpleadoID dado
     if rolUsuario == "supervisor" {
-        var subordinado models.Empleado
-        err := config.DB.
-            Where("id = ? AND supervisor_id = ?", input.EmpleadoID, usuarioID).
-            First(&subordinado).Error
-        if err != nil {
-            if err == gorm.ErrRecordNotFound {
-                c.JSON(http.StatusForbidden, gin.H{"error": "No puedes crear vacación para un empleado que no te pertenece"})
-            } else {
-                c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al verificar empleado subordinado"})
+        if input.EmpleadoID != usuarioID {
+            // Si no es para sí mismo, debe ser un subordinado
+            var subordinado models.Empleado
+            err := config.DB.
+                Where("id = ? AND supervisor_id = ?", input.EmpleadoID, usuarioID).
+                First(&subordinado).Error
+            if err != nil {
+                if err == gorm.ErrRecordNotFound {
+                    c.JSON(http.StatusForbidden, gin.H{"error": "No puedes crear vacación para un empleado que no te pertenece"})
+                } else {
+                    c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al verificar empleado subordinado"})
+                }
+                return
             }
-            return
         }
     } else if rolUsuario != "empleado" {
-        // Cualquier otro rol distinto de supervisor/empleado no está autorizado
+        // Cualquier otro rol que no sea “empleado” ni “supervisor” no está autorizado
         c.JSON(http.StatusForbidden, gin.H{"error": "Rol no autorizado para crear vacación"})
         return
     }
 
-    // 7. Determinar el estado inicial
+    // 6. Validar solapamiento con vacacione s Aprobadas del mismo empleado
+    var existente models.Vacacion
+    err := config.DB.
+        Where("empleado_id = ? AND estado = 'aprobada' AND NOT (fin < ? OR inicio > ?)",
+            input.EmpleadoID, fechaInicio, fechaFin).
+        First(&existente).Error
+    if err == nil {
+        // Encontró una vacación aprobada que se solapa
+        c.JSON(http.StatusBadRequest, gin.H{"error": "Ya existe una vacación aprobada que se solapa en esas fechas"})
+        return
+    }
+    if err != nil && err != gorm.ErrRecordNotFound {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al comprobar vacacione s existentes"})
+        return
+    }
+
+    // 7. Determinar el estado inicial según el rol
     estadoInicial := "pendiente"
     if rolUsuario == "supervisor" {
         estadoInicial = "aprobada"
     }
 
-    // 8. Crear la vacación con ese estado (sin guardar en BD)
+    // 8. Crear la vacación en la BD
     v := models.Vacacion{
         EmpleadoID: input.EmpleadoID,
         Inicio:     fechaInicio,
         Fin:        fechaFin,
         Estado:     estadoInicial,
     }
+    if err := config.DB.Create(&v).Error; err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "No se pudo crear la solicitud de vacaciones"})
+        return
+    }
 
-    c.JSON(http.StatusCreated, v)
+    // 9. Preload del empleado para la respuesta
+    config.DB.Preload("Empleado").First(&v, v.ID)
+
+    // 10. Enviar JSON con fecha solo "YYYY-MM-DD" (sin hora)
+    c.JSON(http.StatusCreated, gin.H{
+        "id":          v.ID,
+        "empleado_id": v.EmpleadoID,
+        "empleado":    v.Empleado,
+        "inicio":      input.Inicio,
+        "fin":         input.Fin,
+        "estado":      v.Estado,
+    })
 }
 
 // ListarVacaciones devuelve todas las solicitudes (puede filtrar por empleado_id, estado, rango fechas)

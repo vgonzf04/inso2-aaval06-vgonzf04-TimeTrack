@@ -15,7 +15,8 @@ import (
 // --------------------------------------------------------------------------------------------------------------------
 // HorasTrabajadasPorPeriodo retorna las horas trabajadas en un rango, respetando el rol:
 // - Supervisor: ve sus propias horas y las de sus empleados asignados.
-// - Empleado: ve solo sus propias horas.
+//   Opcionalmente filtra por empleado_id (si pertenece).
+// - Empleado: ve solo sus propias horas. Si suministra ?empleado_id=<otro>, retorna 403.
 func HorasTrabajadasPorPeriodo(c *gin.Context) {
     // 1. Leer y validar parámetros "inicio" y "fin"
     inicioStr := c.Query("inicio")
@@ -55,7 +56,7 @@ func HorasTrabajadasPorPeriodo(c *gin.Context) {
         return
     }
 
-    // 4. Empezar a construir la consulta base
+    // 4. Construir la consulta base
     db := config.DB.
         Table("fichajes AS f").
         Select("f.empleado_id, e.nombre, SUM(EXTRACT(EPOCH FROM (f.salida - f.entrada)) / 3600) AS total_horas").
@@ -96,8 +97,24 @@ func HorasTrabajadasPorPeriodo(c *gin.Context) {
         }
 
     case "empleado":
-        // Solo sus propias horas, ignorar filtro "empleado_id"
-        db = db.Where("f.empleado_id = ?", usuarioID)
+        // Si envía empleado_id distinto a su propio ID, prohibir
+        if empIDStr := c.Query("empleado_id"); empIDStr != "" {
+            empIDUint64, err := strconv.ParseUint(empIDStr, 10, 32)
+            if err != nil {
+                c.JSON(http.StatusBadRequest, gin.H{"error": "empleado_id debe ser un número"})
+                return
+            }
+            empID := uint(empIDUint64)
+            if empID != usuarioID {
+                c.JSON(http.StatusForbidden, gin.H{"error": "No puedes ver horas de otro empleado"})
+                return
+            }
+            // Si empID == usuarioID, OK: filtramos
+            db = db.Where("f.empleado_id = ?", usuarioID)
+        } else {
+            // Si no se especifica, solo sus propias horas
+            db = db.Where("f.empleado_id = ?", usuarioID)
+        }
 
     default:
         c.JSON(http.StatusForbidden, gin.H{"error": "Rol no autorizado para ver horas trabajadas"})
@@ -117,7 +134,8 @@ func HorasTrabajadasPorPeriodo(c *gin.Context) {
 }
 
 // --------------------------------------------------------------------------------------------------------------------
-// FichajesPorDia restringido a supervisores: cuenta fichajes de empleados asignados y del propio supervisor.
+// FichajesPorDia restringido a supervisores: cuenta fichajes abiertos y cerrados 
+// usando la fecha completa (sin depender de zona horaria) con DATE(...).
 func FichajesPorDia(c *gin.Context) {
     // 1) Verificar rol y usuario_id del token
     idRaw, existsID := c.Get("usuario_id")
@@ -133,7 +151,7 @@ func FichajesPorDia(c *gin.Context) {
         return
     }
     if rolUsuario != "supervisor" {
-        c.JSON(http.StatusForbidden, gin.H{"error": "Acceso denegado: solo supervisores pueden ver éste reporte"})
+        c.JSON(http.StatusForbidden, gin.H{"error": "Acceso denegado: solo supervisores pueden ver este reporte"})
         return
     }
 
@@ -143,34 +161,32 @@ func FichajesPorDia(c *gin.Context) {
         c.JSON(http.StatusBadRequest, gin.H{"error": "Debe indicar 'dia' en formato YYYY-MM-DD"})
         return
     }
-    dia, err := time.Parse("2006-01-02", diaStr)
-    if err != nil {
+    // Validar que diaStr esté en formato correcto (YYYY-MM-DD)
+    if _, err := time.Parse("2006-01-02", diaStr); err != nil {
         c.JSON(http.StatusBadRequest, gin.H{"error": "Formato de 'dia' inválido. Debe ser YYYY-MM-DD"})
         return
     }
-    inicioDia := dia
-    finDia := dia.AddDate(0, 0, 1).Add(-time.Nanosecond)
 
-    // 3) Contar fichajes abiertos (entrada en el día, salida IS NULL) para sup y su equipo
+    // 3) Contar fichajes abiertos (DATE(entrada) = diaStr, salida IS NULL)
     var abiertos int64
-    err = config.DB.
+    err := config.DB.
         Model(&models.Fichaje{}).
         Joins("JOIN empleados e ON e.id = fichajes.empleado_id").
-        Where("(e.supervisor_id = ? OR fichajes.empleado_id = ?) AND entrada >= ? AND entrada <= ? AND salida IS NULL",
-            usuarioID, usuarioID, inicioDia, finDia).
+        Where("(e.supervisor_id = ? OR fichajes.empleado_id = ?) AND DATE(fichajes.entrada) = ? AND fichajes.salida IS NULL",
+            usuarioID, usuarioID, diaStr).
         Count(&abiertos).Error
     if err != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al contar fichajes abiertos"})
         return
     }
 
-    // 4) Contar fichajes cerrados (salida en el día) para sup y su equipo
+    // 4) Contar fichajes cerrados (DATE(salida) = diaStr)
     var cerrados int64
     err = config.DB.
         Model(&models.Fichaje{}).
         Joins("JOIN empleados e ON e.id = fichajes.empleado_id").
-        Where("(e.supervisor_id = ? OR fichajes.empleado_id = ?) AND salida >= ? AND salida <= ?",
-            usuarioID, usuarioID, inicioDia, finDia).
+        Where("(e.supervisor_id = ? OR fichajes.empleado_id = ?) AND DATE(fichajes.salida) = ?",
+            usuarioID, usuarioID, diaStr).
         Count(&cerrados).Error
     if err != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al contar fichajes cerrados"})
@@ -184,7 +200,8 @@ func FichajesPorDia(c *gin.Context) {
     })
 }
 
-// VacacionesPorEstado restringido a supervisores: agrupa por estado solo vacacione s de empleados asignados y propias.
+// VacacionesPorEstado restringido a supervisores: agrupa por estado solo vacacione s
+// de empleados asignados y propias.
 func VacacionesPorEstado(c *gin.Context) {
     // 1) Verificar rol y usuario_id del token
     idRaw, existsID := c.Get("usuario_id")
@@ -200,7 +217,7 @@ func VacacionesPorEstado(c *gin.Context) {
         return
     }
     if rolUsuario != "supervisor" {
-        c.JSON(http.StatusForbidden, gin.H{"error": "Acceso denegado: solo supervisores pueden ver éste reporte"})
+        c.JSON(http.StatusForbidden, gin.H{"error": "Acceso denegado: solo supervisores pueden ver este reporte"})
         return
     }
 
@@ -212,8 +229,9 @@ func VacacionesPorEstado(c *gin.Context) {
     var resultados []Resultado
 
     // 3) Consulta agrupada por estado de vacacione s de empleados del supervisor (y propias)
+    //    Usamos Table("vacacions v") para aliasar correctamente.
     if err := config.DB.
-        Model(&models.Vacacion{}).
+        Table("vacacions v").
         Select("v.estado, COUNT(*) AS cantidad").
         Joins("JOIN empleados e ON e.id = v.empleado_id").
         Where("e.supervisor_id = ? OR v.empleado_id = ?", usuarioID, usuarioID).
