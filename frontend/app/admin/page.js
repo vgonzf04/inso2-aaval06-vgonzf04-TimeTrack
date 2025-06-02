@@ -205,10 +205,15 @@ export default function Page() {
           </div>
 
           {/* Formularios solo para supervisores */}
-          <div className="space-y-6 mt-6">
-            <CrearEmpleadoForm />
-            <EliminarEmpleadoForm />
+          <div className="space-y-6 mt-6 w-full">
+            <div className="w-full">
+              <CrearEmpleadoForm />
+            </div>
+            <div className="w-full">
+              <EliminarEmpleadoForm />
+            </div>
           </div>
+
         </div>
       </SidebarInset>
     </SidebarProvider>

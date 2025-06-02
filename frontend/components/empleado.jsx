@@ -64,7 +64,7 @@ export default function EmpleadoForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4 max-w-md">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4 w-full">
       <input name="nombre" placeholder="Nombre" value={formData.nombre} onChange={handleChange} required />
       <input name="email" type="email" placeholder="Email" value={formData.email} onChange={handleChange} required />
       <input name="cargo" placeholder="Cargo" value={formData.cargo} onChange={handleChange} required />

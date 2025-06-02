@@ -63,7 +63,7 @@ export default function EliminarEmpleadoForm() {
   if (rol !== "supervisor") return null
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4 max-w-md mt-8">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4 w-full mt-8">
       <label className="font-semibold">Selecciona un empleado a eliminar:</label>
       <select
         value={empleadoID}
