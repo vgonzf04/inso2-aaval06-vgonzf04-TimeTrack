@@ -2,13 +2,12 @@
 
 import * as React from "react"
 
+import { useRouter } from "next/navigation"
+
 import {
   BadgeCheck,
-  Bell,
   ChevronsUpDown,
-  CreditCard,
   LogOut,
-  Sparkles,
 } from "lucide-react"
 
 import {
@@ -33,6 +32,7 @@ import {
 } from "@/components/ui/sidebar"
 
 export function NavUser() {
+  const router = useRouter()
   const { isMobile } = useSidebar()
   const [user, setUser] = React.useState({
       name: "shadcn",
@@ -58,6 +58,27 @@ export function NavUser() {
         })
   }
   , [])
+
+  const handleLogout = async () => {
+    try {
+      await fetch("http://localhost:3000/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      })
+      localStorage.clear()
+      router.push("/login")
+    } catch (err) {
+      console.error("Error al cerrar sesión:", err)
+    }
+  }
+
+  const handleAccount = async () => {
+    try {
+      /* Aqui lleva el botón de account */
+    } catch (err) {
+      console.error("Error account: ", err)
+    }
+  }
 
   return (
     <SidebarMenu>
@@ -99,20 +120,17 @@ export function NavUser() {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <BadgeCheck />
+              <DropdownMenuItem onClick={handleAccount}>
+                <BadgeCheck className="mr-2 h-4 w-4" />
                 Account
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Bell />
-                Notifications
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <LogOut />
+            <DropdownMenuItem onClick={handleLogout}>
+              <LogOut className="mr-2 h-4 w-4" />
               Log out
             </DropdownMenuItem>
+
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>

@@ -60,7 +60,11 @@ func Me(c *gin.Context) {
 
 
 func GoogleLogin(c *gin.Context) {
-	url := config.GoogleOAuthConfig.AuthCodeURL("random-state", oauth2.AccessTypeOffline)
+	url := config.GoogleOAuthConfig.AuthCodeURL(
+		"random-state",
+		oauth2.AccessTypeOffline,
+		oauth2.SetAuthURLParam("prompt", "select_account"),
+	)
 	c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
@@ -123,21 +127,35 @@ func GoogleCallback(c *gin.Context) {
 
 	// 5) Crear las claims del JWT, incluyendo el campo "rol"
 	// … tras crear o recuperar emp de la BD …
-claims := jwt.MapClaims{
-    "sub": emp.ID,
-    "rol": emp.Rol,
-    "exp": time.Now().Add(time.Hour * 24).Unix(),
-}
-jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-tokenString, err := jwtToken.SignedString([]byte(os.Getenv("JWT_SECRET")))
-if err != nil {
-    c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al generar token JWT"})
-    return
+	claims := jwt.MapClaims{
+		"sub": emp.ID,
+		"rol": emp.Rol,
+		"exp": time.Now().Add(time.Hour * 24).Unix(),
+	}
+	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := jwtToken.SignedString([]byte(os.Getenv("JWT_SECRET")))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al generar token JWT"})
+		return
+	}
+
+	c.SetCookie("token", tokenString, 3600, "/", "", false, true)
+	// Hasta aquí guardas el JWT en la cookie “token”
+	c.Redirect(http.StatusFound, "http://localhost:3001/dashboard")
+
 }
 
-c.SetCookie("token", tokenString, 3600, "/", "", false, true)
-// Hasta aquí guardas el JWT en la cookie “token”
-c.Redirect(http.StatusFound, "http://localhost:3001/dashboard")
+func Logout(c *gin.Context) {
+	// Para eliminar una cookie, se le da MaxAge = -1
+	c.SetCookie(
+		"token",    // nombre de la cookie
+		"",         // valor vacío
+		-1,         // MaxAge negativo => se elimina
+		"/",        // path
+		"",         // domain (vacío usa el host actual)
+		false,      // secure (ponelo en true si usás HTTPS)
+		true,       // httpOnly
+	)
 
-	
+	c.JSON(http.StatusOK, gin.H{"message": "Sesión cerrada correctamente"})
 }
