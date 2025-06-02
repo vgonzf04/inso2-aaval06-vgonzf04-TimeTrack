@@ -1,4 +1,4 @@
-import EliminarEmpleadoForm from "@/components/EliminarEmpleadoForm"
+import EliminarEmpleadoForm from "@/components/eliminarEmpleado"
 
 export default function EliminarEmpleadoPage() {
   return (

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import EmpleadoForm from "@/components/EmpleadoForm"
+import EmpleadoForm from "@/components/empleado"
 
 export default function CrearEmpleadoPage() {
   const [rol, setRol] = useState(null)
