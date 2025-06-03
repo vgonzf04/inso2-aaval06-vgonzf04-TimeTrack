@@ -1,12 +1,21 @@
+// DatePicker.jsx
 "use client"
-import * as React from "react"
 
+import * as React from "react"
 import { Calendar } from "@/components/ui/calendar"
 import { Button } from "@/components/ui/button"
 import {
   SidebarGroup,
   SidebarGroupContent,
 } from "@/components/ui/sidebar"
+
+// Helper: formatea una Date local a “YYYY-MM-DD”
+function formatLocalYYYYMMDD(date) {
+  const yyyy = date.getFullYear()
+  const mm = String(date.getMonth() + 1).padStart(2, "0")
+  const dd = String(date.getDate()).padStart(2, "0")
+  return `${yyyy}-${mm}-${dd}`
+}
 
 export function DatePicker({ onVacacionCreada }) {
   const [selected, setSelected] = React.useState(undefined)
@@ -17,6 +26,9 @@ export function DatePicker({ onVacacionCreada }) {
 
     setLoading(true)
     try {
+      const inicioStr = formatLocalYYYYMMDD(selected.from)
+      const finStr = formatLocalYYYYMMDD(selected.to)
+
       const res = await fetch("http://localhost:3000/vacaciones", {
         method: "POST",
         credentials: "include",
@@ -24,8 +36,8 @@ export function DatePicker({ onVacacionCreada }) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          inicio: selected.from.toISOString().slice(0, 10),
-          fin: selected.to.toISOString().slice(0, 10),
+          inicio: inicioStr,
+          fin: finStr,
         }),
       })
 

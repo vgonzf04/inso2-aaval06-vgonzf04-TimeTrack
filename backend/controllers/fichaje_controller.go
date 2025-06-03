@@ -298,52 +298,52 @@ func ListarFichajes(c *gin.Context) {
 // y devuelve la dirección textual (formatted_address) del primer resultado.
 // Si algo falla, devuelve "".
 func obtenerDireccionGoogle(lat, lng float64) string {
-	apiKey := os.Getenv("GOOGLE_MAPS_API_KEY")
-	if apiKey == "" {
-		return ""
-	}
-	url := fmt.Sprintf(
-		"https://maps.googleapis.com/maps/api/geocode/json?latlng=%f,%f&key=%s",
-		lat, lng, apiKey,
-	)
+    apiKey := os.Getenv("GOOGLE_MAPS_API_KEY")
+    if apiKey == "" {
+        return ""
+    }
+    url := fmt.Sprintf(
+        "https://maps.googleapis.com/maps/api/geocode/json?latlng=%f,%f&key=%s",
+        lat, lng, apiKey,
+    )
 
-	resp, err := http.Get(url)
-	if err != nil {
-		log.Printf("Error al llamar a Google Maps: %v\n", err)
-		return ""
-	}
-	defer resp.Body.Close()
+    resp, err := http.Get(url)
+    if err != nil {
+        log.Printf("Error al llamar a Google Maps: %v\n", err)
+        return ""
+    }
+    defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("Error al leer body de Google Maps: %v\n", err)
-		return ""
-	}
+    body, err := ioutil.ReadAll(resp.Body)
+    if err != nil {
+        log.Printf("Error al leer body de Google Maps: %v\n", err)
+        return ""
+    }
 
-	var resultado struct {
-		Results []struct {
-			FormattedAddress string   `json:"formatted_address"`
-			Types            []string `json:"types"`
-		} `json:"results"`
-		Status string `json:"status"`
-	}
-	if err := json.Unmarshal(body, &resultado); err != nil {
-		log.Printf("Error al parsear JSON de Google Maps: %v\n", err)
-		return ""
-	}
-	if resultado.Status != "OK" || len(resultado.Results) == 0 {
-		return ""
-	}
+    var resultado struct {
+        Results []struct {
+            FormattedAddress string   `json:"formatted_address"`
+            Types            []string `json:"types"`
+        } `json:"results"`
+        Status string `json:"status"`
+    }
+    if err := json.Unmarshal(body, &resultado); err != nil {
+        log.Printf("Error al parsear JSON de Google Maps: %v\n", err)
+        return ""
+    }
+    if resultado.Status != "OK" || len(resultado.Results) == 0 {
+        return ""
+    }
 
-	// Buscar el primer Result que tenga "street_address" en Types
-	for _, r := range resultado.Results {
-		for _, t := range r.Types {
-			if t == "street_address" || t == "route" {
-				return r.FormattedAddress
-			}
-		}
-	}
+    // Buscar el primer Result que tenga "street_address" en Types
+    for _, r := range resultado.Results {
+        for _, t := range r.Types {
+            if t == "street_address" || t == "route" {
+                return r.FormattedAddress
+            }
+        }
+    }
 
-	// Si no encontramos street_address, devolvemos el FormattedAddress del primer resultado
-	return resultado.Results[0].FormattedAddress
+    // Si no encontramos street_address, devolvemos el FormattedAddress del primer resultado
+    return resultado.Results[0].FormattedAddress
 }

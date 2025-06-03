@@ -1,20 +1,15 @@
-"use client"
+"use client";
 
-import * as React from "react"
-
-import { useRouter } from "next/navigation"
-
-import {
-  BadgeCheck,
-  ChevronsUpDown,
-  LogOut,
-} from "lucide-react"
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import { BadgeCheck, ChevronsUpDown, LogOut } from "lucide-react";
 
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
-} from "@/components/ui/avatar"
+} from "@/components/ui/avatar";
+
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,62 +18,59 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu";
+
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
-} from "@/components/ui/sidebar"
+} from "@/components/ui/sidebar";
 
 export function NavUser() {
-  const router = useRouter()
-  const { isMobile } = useSidebar()
+  const router = useRouter();
+  const { isMobile } = useSidebar();
   const [user, setUser] = React.useState({
-      name: "shadcn",
-      email: "m@example.com",
-      avatar: "/avatars/shadcn.jpg",
-    })
+    name: "shadcn",
+    email: "m@example.com",
+    avatar: "/avatars/shadcn.jpg",
+  });
 
   React.useEffect(() => {
-      fetch("http://localhost:3000/auth/me", {
-          method: "GET",
-          credentials: "include", // Include cookizes for session management
-        })
-        .then((response) => response.json())
-        .then((userData) => {
-          setUser({
-            name: userData.nombre,
-            email: userData.email,
-            avatar: userData.avatar || "/avatars/default.jpg", // Fallback avatar
-           })
-        })
-        .catch((error) => {
-          console.error("Error fetching user data:", error)
-        })
-  }
-  , [])
+    fetch("http://localhost:3000/auth/me", {
+      method: "GET",
+      credentials: "include", // incluimos cookies para sesión
+    })
+      .then((response) => response.json())
+      .then((userData) => {
+        setUser({
+          name: userData.nombre,
+          email: userData.email,
+          avatar: userData.avatar || "/avatars/default.jpg",
+        });
+      })
+      .catch((error) => {
+        console.error("Error fetching user data:", error);
+      });
+  }, []);
 
   const handleLogout = async () => {
     try {
       await fetch("http://localhost:3000/auth/logout", {
         method: "POST",
         credentials: "include",
-      })
-      localStorage.clear()
-      router.push("/login")
+      });
+      localStorage.clear();
+      router.push("/login");
     } catch (err) {
-      console.error("Error al cerrar sesión:", err)
+      console.error("Error al cerrar sesión:", err);
     }
-  }
+  };
 
-  const handleAccount = async () => {
-    try {
-      /* Aqui lleva el botón de account */
-    } catch (err) {
-      console.error("Error account: ", err)
-    }
-  }
+  const handleAccount = () => {
+    // Simplemente redirigimos a /account
+    router.push("/account");
+  };
 
   return (
     <SidebarMenu>
@@ -120,6 +112,7 @@ export function NavUser() {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
+              {/* Al hacer clic aquí, llamamos a handleAccount → router.push("/account") */}
               <DropdownMenuItem onClick={handleAccount}>
                 <BadgeCheck className="mr-2 h-4 w-4" />
                 Account
@@ -130,10 +123,9 @@ export function NavUser() {
               <LogOut className="mr-2 h-4 w-4" />
               Log out
             </DropdownMenuItem>
-
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>
     </SidebarMenu>
-  )
+  );
 }
