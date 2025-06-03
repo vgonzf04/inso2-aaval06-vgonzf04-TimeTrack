@@ -6,25 +6,20 @@ export default function EliminarEmpleadoForm() {
   const [empleados, setEmpleados] = useState([])
   const [empleadoID, setEmpleadoID] = useState("")
   const [mensaje, setMensaje] = useState("")
-  const [rol, setRol] = useState(null)
 
   useEffect(() => {
-    const rolGuardado = localStorage.getItem("rol")
-    setRol(rolGuardado)
+   fetch("http://localhost:3000/empleados", {
+     method: "GET",
+     credentials: "include"
+   })
+     .then(res => res.json())
+     .then(data => {
+       setEmpleados(data)
+     })
+     .catch(err => {
+       console.error("Error al cargar empleados:", err)
+     })
 
-    if (rolGuardado === "supervisor") {
-      fetch("http://localhost:3000/empleados", {
-        method: "GET",
-        credentials: "include"
-      })
-        .then(res => res.json())
-        .then(data => {
-          setEmpleados(data)
-        })
-        .catch(err => {
-          console.error("Error al cargar empleados:", err)
-        })
-    }
   }, [])
 
   const handleSubmit = async (e) => {
@@ -59,9 +54,6 @@ export default function EliminarEmpleadoForm() {
       setMensaje("Error al eliminar el empleado.")
     }
   }
-
-  if (rol !== "supervisor") return null
-
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4 w-full mt-8">
       <label className="font-semibold">Selecciona un empleado a eliminar:</label>
