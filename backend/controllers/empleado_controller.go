@@ -9,6 +9,7 @@ import (
 	"time"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // ObtenerEmpleadoPorID devuelve un empleado por su ID
@@ -61,56 +62,42 @@ func ObtenerEmpleadoPorID(c *gin.Context) {
 	c.JSON(http.StatusOK, empleado)
 }
 
-// ObtenerTodosEmpleados devuelve la lista completa de empleados
-func ObtenerTodosEmpleados(c *gin.Context) {
+// ObtenerPerfilUsuario devuelve el registro del empleado autenticado.
+// Extrae "usuario_id" y "rol_usuario" del contexto (JWTAuth ya los puso allí).
+func ObtenerPerfilUsuario(c *gin.Context) {
 	// 1) Extraer del contexto los valores agregados por JWTAuth():
 	//    - "usuario_id" en claims["sub"]
 	//    - "rol_usuario" en claims["rol"]
 	idRaw, existsID := c.Get("usuario_id")
-	rolRaw, existsRol := c.Get("rol_usuario")
-	if !existsID || !existsRol {
+	if !existsID {
 		// No debería ocurrir si JWTAuth está funcionando correctamente
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
 		return
 	}
 
-	// Convertir los valores a tipos concretos
+	// Convertir el ID a tipo uint
 	usuarioID, okID := idRaw.(uint)
-	rolUsuario, okRol := rolRaw.(string)
-	if !okID || !okRol {
+	if !okID {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
 		return
 	}
 
-	var empleados []models.Empleado
-
-	switch rolUsuario {
-	case "supervisor":
-		// 2) Si es supervisor, listar solo los empleados que él supervisa
-		if err := config.DB.
-			Where("supervisor_id = ?", usuarioID).
-			Find(&empleados).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar empleados"})
-			return
+	// 2) Hacer select * from empleados where id = usuarioID
+	var emp models.Empleado
+	if err := config.DB.First(&emp, usuarioID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			// Si no existe un registro con ese ID, devolvemos 404
+			c.JSON(http.StatusNotFound, gin.H{"error": "Empleado no encontrado"})
+		} else {
+			// Cualquier otro error de BD
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar perfil"})
 		}
-	case "empleado":
-		// 3) Si es empleado, devolver únicamente su propio registro
-		var self models.Empleado
-		if err := config.DB.First(&self, usuarioID).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar su perfil"})
-			return
-		}
-		empleados = append(empleados, self)
-	default:
-		// 4) Si hubiera otro rol (o no estuviera presente), denegar
-		c.JSON(http.StatusForbidden, gin.H{"error": "Rol no autorizado para listar empleados"})
 		return
 	}
 
-	// 5) Devolver la lista (vacía o con los registros filtrados)
-	c.JSON(http.StatusOK, empleados)
+	// 3) Responder con el JSON del empleado (solo su propio registro)
+	c.JSON(http.StatusOK, emp)
 }
-
 // CrearEmpleado añade un nuevo empleado
 func CrearEmpleado(c *gin.Context) {
 	var nuevo models.Empleado

@@ -10,7 +10,7 @@ import (
 func RegistrarRutasEmpleado(rg *gin.RouterGroup) {
 	empleadoGroup := rg.Group("/empleados")
 	{
-		empleadoGroup.GET("", controllers.ObtenerTodosEmpleados)    // Listar todos
+		empleadoGroup.GET("/me", controllers.ObtenerPerfilUsuario)    // Listar datos empleado
 		empleadoGroup.GET("/:id", controllers.ObtenerEmpleadoPorID) // Obtener uno
 		//empleadoGroup.POST("/", controllers.CrearEmpleado)             // Crear nuevo
 		empleadoGroup.PUT("/:id", controllers.ActualizarEmpleado)  // Actualizar
