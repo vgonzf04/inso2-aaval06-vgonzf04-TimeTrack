@@ -24,20 +24,20 @@ import { Button } from "@/components/ui/button"
 export default function AccountPage() {
   const router = useRouter()
 
-  // —— Perfil ——
+  // —— Perfil —— 
   const [perfil, setPerfil] = useState(null)
   const [loadingPerfil, setLoadingPerfil] = useState(true)
   const [errorPerfil, setErrorPerfil] = useState(null)
 
-  // —— Horas trabajadas ——
-  const [horas, setHoras] = useState([])          // [{ empleado_id, nombre, total_horas }]
+  // —— Horas trabajadas —— 
+  const [horas, setHoras] = useState([])          
   const [loadingHoras, setLoadingHoras] = useState(true)
   const [errorHoras, setErrorHoras] = useState(null)
 
-  // —— Tarifa €/h ——
-  const [tarifa, setTarifa] = useState(15)         // €/hora por defecto
+  // tarifa fija
+  const tarifa = 15
 
-  // Helper para formatear YYYY-MM-DD
+  // Helper YYYY-MM-DD
   function formatYYYYMMDD(d) {
     const yyyy = d.getFullYear()
     const mm = String(d.getMonth() + 1).padStart(2, "0")
@@ -45,7 +45,6 @@ export default function AccountPage() {
     return `${yyyy}-${mm}-${dd}`
   }
 
-  // 1) Cargar perfil
   useEffect(() => {
     async function fetchMiPerfil() {
       try {
@@ -55,23 +54,19 @@ export default function AccountPage() {
           headers: { "Content-Type": "application/json" },
         })
         if (res.status === 401 || res.status === 403) {
-          router.push("/login")
-          return
+          router.push("/login"); return
         }
-        if (!res.ok) throw new Error("Error al cargar perfil de empleado")
-        const data = await res.json()
-        setPerfil(data)
-        setLoadingPerfil(false)
+        if (!res.ok) throw new Error("Error al cargar perfil")
+        setPerfil(await res.json())
       } catch (err) {
-        console.error(err)
         setErrorPerfil(err.message)
+      } finally {
         setLoadingPerfil(false)
       }
     }
     fetchMiPerfil()
   }, [router])
 
-  // 2) Cargar horas trabajadas (hoy) **cuando ya tengamos** perfil.id
   useEffect(() => {
     if (!perfil?.id) return
     async function fetchHoras() {
@@ -82,61 +77,46 @@ export default function AccountPage() {
           { method: "GET", credentials: "include" }
         )
         if (res.status === 401 || res.status === 403) {
-          router.push("/login")
-          return
+          router.push("/login"); return
         }
-        if (!res.ok) throw new Error("Error al cargar horas trabajadas")
+        if (!res.ok) throw new Error("Error al cargar horas")
         const data = await res.json()
-        // data = [ { empleado_id, nombre, total_horas } ]
-        setHoras(data.map(x => ({
-          ...x,
-          id: x.empleado_id  // DataTable necesita campo id único
-        })))
-        setLoadingHoras(false)
+        setHoras(
+          (Array.isArray(data) ? data : []).map(x => ({
+            id: x.empleado_id,
+            empleado_id: x.empleado_id,
+            nombre: x.nombre,
+            total_horas: x.total_horas,
+          }))
+        )
       } catch (err) {
-        console.error(err)
         setErrorHoras(err.message)
+      } finally {
         setLoadingHoras(false)
       }
     }
     fetchHoras()
   }, [perfil, router])
 
-  // --- Render loading / errores del perfil ---
-  if (loadingPerfil) {
-    return (
-      <SidebarProvider>
-        <AppSidebar />
-        <SidebarInset>
-          <div className="flex items-center justify-center h-screen w-full">
-            <p className="text-lg">Cargando datos de mi cuenta…</p>
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
-    )
-  }
-  if (errorPerfil) {
-    return (
-      <SidebarProvider>
-        <AppSidebar />
-        <SidebarInset>
-          <div className="p-4">
-            <p className="text-red-600">Error: {errorPerfil}</p>
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
-    )
-  }
+  if (loadingPerfil) return (
+    <SidebarProvider><AppSidebar /><SidebarInset>
+      <div className="flex items-center justify-center h-screen"><p>Cargando…</p></div>
+    </SidebarInset></SidebarProvider>
+  )
+  if (errorPerfil) return (
+    <SidebarProvider><AppSidebar /><SidebarInset>
+      <p className="text-red-600">Error: {errorPerfil}</p>
+    </SidebarInset></SidebarProvider>
+  )
 
-  // --- Datos de perfil en tabla ---
   const filasPerfil = [{
     id: perfil.id,
-    nombre: perfil.nombre ?? "—",
-    email: perfil.email ?? "—",
-    cargo: perfil.cargo ?? "—",
-    fechaContratacion: perfil.fecha_contratacion ?? perfil.FechaContratacion ?? "—",
-    supervisorID: perfil.supervisor_id ?? perfil.SupervisorID ?? "—",
-    rol: perfil.rol ?? perfil.Rol ?? "—",
+    nombre: perfil.nombre,
+    email: perfil.email,
+    cargo: perfil.cargo,
+    fechaContratacion: perfil.fecha_contratacion ?? perfil.FechaContratacion,
+    supervisorID: perfil.supervisor_id ?? perfil.SupervisorID,
+    rol: perfil.rol ?? perfil.Rol,
   }]
   const colsPerfil = [
     { header: "ID", accessorKey: "id" },
@@ -148,7 +128,6 @@ export default function AccountPage() {
     { header: "Rol", accessorKey: "rol" },
   ]
 
-  // --- Columnas para horas + tarifa + total € ---
   const colsHoras = [
     { header: "Empleado ID", accessorKey: "empleado_id" },
     { header: "Nombre", accessorKey: "nombre" },
@@ -172,57 +151,32 @@ export default function AccountPage() {
   return (
     <SidebarProvider>
       <AppSidebar />
-
       <SidebarInset>
-        {/* ─ Header ─ */}
         <header className="bg-background sticky top-0 flex h-16 items-center gap-2 border-b px-4">
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="mr-2 h-4" />
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem><BreadcrumbPage>Mi Cuenta</BreadcrumbPage></BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
+          <Breadcrumb><BreadcrumbList>
+            <BreadcrumbItem><BreadcrumbPage>Mi Cuenta</BreadcrumbPage></BreadcrumbItem>
+          </BreadcrumbList></Breadcrumb>
           <div className="ml-auto">
             <Button size="sm" variant="outline" onClick={() => router.push("/dashboard")}>
               ← Dashboard
             </Button>
           </div>
         </header>
-
         <div className="flex flex-1 flex-col gap-4 p-4">
-          {/* ─ Tabla de Perfil ─ */}
           <section>
             <h2 className="text-2xl font-semibold mb-4">Datos de mi usuario</h2>
-            <div className="overflow-x-auto">
-              <DataTable data={filasPerfil} columns={colsPerfil} />
-            </div>
+            <DataTable data={filasPerfil} columns={colsPerfil} />
           </section>
-
-          {/* ─ Tabla de Horas y Ganancias ─ */}
           <section>
             <h2 className="text-2xl font-semibold mb-4">Horas Trabajadas Hoy</h2>
-
-            {/* Selector de Tarifa */}
-            <div className="mb-4 flex items-center gap-2">
-              <label className="font-medium">Tarifa €/h:</label>
-              <input
-                type="number"
-                className="w-24 p-1 border rounded"
-                value={tarifa}
-                onChange={e => setTarifa(parseFloat(e.target.value) || 0)}
-              />
-            </div>
-
-            {loadingHoras ? (
-              <p>Cargando horas trabajadas…</p>
-            ) : errorHoras ? (
-              <p className="text-red-600">Error: {errorHoras}</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <DataTable data={horas} columns={colsHoras} />
-              </div>
-            )}
+            {loadingHoras
+              ? <p>Cargando horas…</p>
+              : errorHoras
+                ? <p className="text-red-600">Error: {errorHoras}</p>
+                : <DataTable data={horas} columns={colsHoras} />
+            }
           </section>
         </div>
       </SidebarInset>

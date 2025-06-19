@@ -1,3 +1,5 @@
+// frontend/app/dashboard/page.js
+
 "use client"
 
 import { useState, useEffect } from "react"
@@ -20,9 +22,7 @@ import {
 
 import { TimerButton } from "@/components/timer-button"
 import { toast } from "sonner"
-
-// 1) Importa aquí el DatePicker
-import { DatePicker } from "@/components/date-picker"
+import { DatePicker } from "@/components/date-picker" // Asegúrate de importar DatePicker
 
 export default function Page() {
   const [rol, setRol] = useState(null)
@@ -87,8 +87,10 @@ export default function Page() {
         const vacasFlat = dataV.map((v) => ({
           id: v.id,
           empleado: v.empleado?.nombre || "—",
-          fechaInicio: v.inicioStr ?? v.Inicio ?? "—",
-          fechaFin: v.finStr ?? v.Fin ?? "—",
+          // Su ponía aquí v.inicioStr y v.finStr, pero sabemos que vienen vacíos,
+          // así que preferimos usar directamente v.inicio y v.fin (ISO)
+          fechaInicio: v.inicioStr || v.inicio?.slice(0, 10) || "—",
+          fechaFin: v.finStr || v.fin?.slice(0, 10) || "—",
           estado: v.estado || v.Estado || "—",
         }))
         setVacaciones(vacasFlat)
@@ -135,27 +137,33 @@ export default function Page() {
 
   // 4) Callback para vacación creada (lo llamará DatePicker)
   function handleVacacionCreada(nuevaVacacionCruda) {
+    console.log("🔔 handleVacacionCreada ha sido llamado con:", nuevaVacacionCruda)
+
+    // Extraemos fechas asegurándonos de no quedarnos con las cadenas vacías:
+    const fechaInicio =
+      nuevaVacacionCruda.inicioStr ||
+      (nuevaVacacionCruda.inicio ? nuevaVacacionCruda.inicio.slice(0, 10) : "") ||
+      "—"
+    const fechaFin =
+      nuevaVacacionCruda.finStr ||
+      (nuevaVacacionCruda.fin ? nuevaVacacionCruda.fin.slice(0, 10) : "") ||
+      "—"
+
     const vacaFlat = {
       id: nuevaVacacionCruda.id,
-      empleado: nuevaVacacionCruda.empleado?.nombre ?? "—",
-      fechaInicio:
-        nuevaVacacionCruda.inicioStr ??
-        nuevaVacacionCruda.Inicio ??
-        nuevaVacacionCruda.inicio ??
-        "—",
-      fechaFin:
-        nuevaVacacionCruda.finStr ??
-        nuevaVacacionCruda.Fin ??
-        nuevaVacacionCruda.fin ??
-        "—",
-      estado:
-        nuevaVacacionCruda.estado ??
-        nuevaVacacionCruda.Estado ??
-        "—",
+      empleado: nuevaVacacionCruda.empleado?.nombre || "—",
+      fechaInicio,
+      fechaFin,
+      estado: nuevaVacacionCruda.estado || nuevaVacacionCruda.Estado || "—",
     }
 
-    // **Aquí añadimos la nueva vacación al estado para que re-renderice la tabla sin recargar la página**
-    setVacaciones((prev) => [...prev, vacaFlat])
+    console.log("→ vacaFlat a añadir:", vacaFlat)
+
+    setVacaciones((prev) => {
+      console.log("   Estado previo de vacaciones:", prev)
+      return [...prev, vacaFlat]
+    })
+
     toast.success("Solicitud de vacación enviada")
   }
 
@@ -238,6 +246,7 @@ export default function Page() {
         </header>
 
         <div className="flex flex-1 flex-col gap-4 p-4">
+
           {/* ──────── Tabla de Fichajes ──────── */}
           <section className="mb-8">
             <h2 className="text-2xl font-semibold mb-4">Listado de Fichajes</h2>
@@ -246,15 +255,8 @@ export default function Page() {
             </div>
           </section>
 
-          {/* ──────── Componente: Pedir Vacaciones ──────── */}
-          <section className="mb-8">
-            <h2 className="text-2xl font-semibold mb-2">Pedir Vacaciones</h2>
-            {/* Aquí insertamos el DatePicker, pasándole el callback */}
-            <DatePicker onVacacionCreada={handleVacacionCreada} />
-          </section>
-
           {/* ──────── Tabla de Vacaciones ──────── */}
-          <section className="mb-8">
+          <section>
             <h2 className="text-2xl font-semibold mb-4">Vacaciones Solicitadas</h2>
             <div className="overflow-x-auto">
               <DataTable data={vacaciones} columns={vacacionesColumns} />
