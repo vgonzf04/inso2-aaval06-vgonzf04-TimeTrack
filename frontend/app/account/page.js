@@ -19,49 +19,91 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
-import { Button } from "@/components/ui/button"   // ← Importamos el componente Button
+import { Button } from "@/components/ui/button"
 
 export default function AccountPage() {
   const router = useRouter()
 
-  const [perfil, setPerfil] = useState(null)    // Aquí guardamos el objeto Empleado
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  // —— Perfil ——
+  const [perfil, setPerfil] = useState(null)
+  const [loadingPerfil, setLoadingPerfil] = useState(true)
+  const [errorPerfil, setErrorPerfil] = useState(null)
 
+  // —— Horas trabajadas ——
+  const [horas, setHoras] = useState([])          // [{ empleado_id, nombre, total_horas }]
+  const [loadingHoras, setLoadingHoras] = useState(true)
+  const [errorHoras, setErrorHoras] = useState(null)
+
+  // —— Tarifa €/h ——
+  const [tarifa, setTarifa] = useState(15)         // €/hora por defecto
+
+  // Helper para formatear YYYY-MM-DD
+  function formatYYYYMMDD(d) {
+    const yyyy = d.getFullYear()
+    const mm = String(d.getMonth() + 1).padStart(2, "0")
+    const dd = String(d.getDate()).padStart(2, "0")
+    return `${yyyy}-${mm}-${dd}`
+  }
+
+  // 1) Cargar perfil
   useEffect(() => {
     async function fetchMiPerfil() {
       try {
         const res = await fetch("http://localhost:3000/empleados/me", {
           method: "GET",
-          credentials: "include",       // <- enviamos la cookie JWT
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
         })
-
-        // Si no está autenticado o token inválido, redirigimos a /login
         if (res.status === 401 || res.status === 403) {
           router.push("/login")
           return
         }
-        if (!res.ok) {
-          throw new Error("Error al cargar perfil de empleado")
-        }
-
+        if (!res.ok) throw new Error("Error al cargar perfil de empleado")
         const data = await res.json()
-        // data debe ser objeto con { id, nombre, email, cargo, fecha_contratacion, supervisor_id, rol }
         setPerfil(data)
-        setLoading(false)
+        setLoadingPerfil(false)
       } catch (err) {
-        console.error("fetchMiPerfil:", err)
-        setError(err.message || "Algo salió mal al cargar el perfil")
-        setLoading(false)
+        console.error(err)
+        setErrorPerfil(err.message)
+        setLoadingPerfil(false)
       }
     }
-
     fetchMiPerfil()
   }, [router])
 
-  // 1) Mientras cargamos, mostramos un spinner / loading
-  if (loading) {
+  // 2) Cargar horas trabajadas (hoy) **cuando ya tengamos** perfil.id
+  useEffect(() => {
+    if (!perfil?.id) return
+    async function fetchHoras() {
+      try {
+        const hoy = formatYYYYMMDD(new Date())
+        const res = await fetch(
+          `http://localhost:3000/dashboard/horas-periodo?inicio=${hoy}&fin=${hoy}&empleado_id=${perfil.id}`,
+          { method: "GET", credentials: "include" }
+        )
+        if (res.status === 401 || res.status === 403) {
+          router.push("/login")
+          return
+        }
+        if (!res.ok) throw new Error("Error al cargar horas trabajadas")
+        const data = await res.json()
+        // data = [ { empleado_id, nombre, total_horas } ]
+        setHoras(data.map(x => ({
+          ...x,
+          id: x.empleado_id  // DataTable necesita campo id único
+        })))
+        setLoadingHoras(false)
+      } catch (err) {
+        console.error(err)
+        setErrorHoras(err.message)
+        setLoadingHoras(false)
+      }
+    }
+    fetchHoras()
+  }, [perfil, router])
+
+  // --- Render loading / errores del perfil ---
+  if (loadingPerfil) {
     return (
       <SidebarProvider>
         <AppSidebar />
@@ -73,53 +115,30 @@ export default function AccountPage() {
       </SidebarProvider>
     )
   }
-
-  // 2) Si dio error al traer el perfil, lo mostramos
-  if (error) {
+  if (errorPerfil) {
     return (
       <SidebarProvider>
         <AppSidebar />
         <SidebarInset>
           <div className="p-4">
-            <p className="text-red-600">Error: {error}</p>
+            <p className="text-red-600">Error: {errorPerfil}</p>
           </div>
         </SidebarInset>
       </SidebarProvider>
     )
   }
 
-  // 3) Verificamos que ‘perfil’ exista y tenga un 'id' numérico
-  if (!perfil || typeof perfil.id !== "number") {
-    return (
-      <SidebarProvider>
-        <AppSidebar />
-        <SidebarInset>
-          <div className="p-4">
-            <p className="text-red-600">No se encontró perfil de usuario.</p>
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
-    )
-  }
-
-  // 4) Construimos el array de “filas” para pasarlo a DataTable.
-  //    Éste es un array de un solo elemento a partir de ‘perfil’
-  const filas = [
-    {
-      id: perfil.id,                                      // ← debe ser un número
-      nombre: perfil.nombre ?? "—",
-      email: perfil.email ?? "—",
-      cargo: perfil.cargo ?? "—",
-      // Ajusta si en tu modelo Go se llama `fecha_contratacion` o `FechaContratacion`
-      fechaContratacion: perfil.fecha_contratacion ?? perfil.FechaContratacion ?? "—",
-      // `supervisor_id` en Go es *uint o nil, en JS vendrá null o número
-      supervisorID: perfil.supervisor_id ?? perfil.SupervisorID ?? "—",
-      rol: perfil.rol ?? perfil.Rol ?? "—",
-    },
-  ]
-
-  // 5) Definimos las columnas de la tabla; las claves EXACTAS han de coincidir con los campos de ‘filas’
-  const columnas = [
+  // --- Datos de perfil en tabla ---
+  const filasPerfil = [{
+    id: perfil.id,
+    nombre: perfil.nombre ?? "—",
+    email: perfil.email ?? "—",
+    cargo: perfil.cargo ?? "—",
+    fechaContratacion: perfil.fecha_contratacion ?? perfil.FechaContratacion ?? "—",
+    supervisorID: perfil.supervisor_id ?? perfil.SupervisorID ?? "—",
+    rol: perfil.rol ?? perfil.Rol ?? "—",
+  }]
+  const colsPerfil = [
     { header: "ID", accessorKey: "id" },
     { header: "Nombre", accessorKey: "nombre" },
     { header: "Email", accessorKey: "email" },
@@ -129,46 +148,81 @@ export default function AccountPage() {
     { header: "Rol", accessorKey: "rol" },
   ]
 
+  // --- Columnas para horas + tarifa + total € ---
+  const colsHoras = [
+    { header: "Empleado ID", accessorKey: "empleado_id" },
+    { header: "Nombre", accessorKey: "nombre" },
+    {
+      header: "Total Horas",
+      accessorKey: "total_horas",
+      cell: ({ getValue }) => Number(getValue()).toFixed(3),
+    },
+    {
+      header: "€/h",
+      accessorKey: "tarifa",
+      cell: () => tarifa.toFixed(2),
+    },
+    {
+      header: "Total €",
+      accessorKey: "total_horas",
+      cell: ({ getValue }) => (getValue() * tarifa).toFixed(2),
+    },
+  ]
+
   return (
     <SidebarProvider>
       <AppSidebar />
 
       <SidebarInset>
-        {/* ─── Header ─── */}
-        <header className="bg-background sticky top-0 flex h-16 shrink-0 items-center gap-2 border-b px-4">
+        {/* ─ Header ─ */}
+        <header className="bg-background sticky top-0 flex h-16 items-center gap-2 border-b px-4">
           <SidebarTrigger className="-ml-1" />
-          <Separator
-            orientation="vertical"
-            className="mr-2 data-[orientation=vertical]:h-4"
-          />
+          <Separator orientation="vertical" className="mr-2 h-4" />
           <Breadcrumb>
             <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbPage>Mi Cuenta</BreadcrumbPage>
-              </BreadcrumbItem>
+              <BreadcrumbItem><BreadcrumbPage>Mi Cuenta</BreadcrumbPage></BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-
-          {/* ── Botón “← Dashboard” (aparece en la parte superior derecha del header) ── */}
           <div className="ml-auto">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => router.push("/dashboard")}
-            >
+            <Button size="sm" variant="outline" onClick={() => router.push("/dashboard")}>
               ← Dashboard
             </Button>
           </div>
         </header>
-        {/* ─── Fin del Header ─── */}
 
-        {/* ─── Tabla con datos de mi usuario ─── */}
         <div className="flex flex-1 flex-col gap-4 p-4">
+          {/* ─ Tabla de Perfil ─ */}
           <section>
             <h2 className="text-2xl font-semibold mb-4">Datos de mi usuario</h2>
             <div className="overflow-x-auto">
-              <DataTable data={filas} columns={columnas} />
+              <DataTable data={filasPerfil} columns={colsPerfil} />
             </div>
+          </section>
+
+          {/* ─ Tabla de Horas y Ganancias ─ */}
+          <section>
+            <h2 className="text-2xl font-semibold mb-4">Horas Trabajadas Hoy</h2>
+
+            {/* Selector de Tarifa */}
+            <div className="mb-4 flex items-center gap-2">
+              <label className="font-medium">Tarifa €/h:</label>
+              <input
+                type="number"
+                className="w-24 p-1 border rounded"
+                value={tarifa}
+                onChange={e => setTarifa(parseFloat(e.target.value) || 0)}
+              />
+            </div>
+
+            {loadingHoras ? (
+              <p>Cargando horas trabajadas…</p>
+            ) : errorHoras ? (
+              <p className="text-red-600">Error: {errorHoras}</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <DataTable data={horas} columns={colsHoras} />
+              </div>
+            )}
           </section>
         </div>
       </SidebarInset>

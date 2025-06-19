@@ -1,5 +1,3 @@
-// app/dashboard/page.js
-
 "use client"
 
 import { useState, useEffect } from "react"
@@ -22,6 +20,9 @@ import {
 
 import { TimerButton } from "@/components/timer-button"
 import { toast } from "sonner"
+
+// 1) Importa aquí el DatePicker
+import { DatePicker } from "@/components/date-picker"
 
 export default function Page() {
   const [rol, setRol] = useState(null)
@@ -134,7 +135,7 @@ export default function Page() {
 
   // 4) Callback para vacación creada (lo llamará DatePicker)
   function handleVacacionCreada(nuevaVacacionCruda) {
-   const vacaFlat = {
+    const vacaFlat = {
       id: nuevaVacacionCruda.id,
       empleado: nuevaVacacionCruda.empleado?.nombre ?? "—",
       fechaInicio:
@@ -153,6 +154,7 @@ export default function Page() {
         "—",
     }
 
+    // **Aquí añadimos la nueva vacación al estado para que re-renderice la tabla sin recargar la página**
     setVacaciones((prev) => [...prev, vacaFlat])
     toast.success("Solicitud de vacación enviada")
   }
@@ -244,11 +246,16 @@ export default function Page() {
             </div>
           </section>
 
+          {/* ──────── Componente: Pedir Vacaciones ──────── */}
+          <section className="mb-8">
+            <h2 className="text-2xl font-semibold mb-2">Pedir Vacaciones</h2>
+            {/* Aquí insertamos el DatePicker, pasándole el callback */}
+            <DatePicker onVacacionCreada={handleVacacionCreada} />
+          </section>
+
           {/* ──────── Tabla de Vacaciones ──────── */}
           <section className="mb-8">
-            <h2 className="text-2xl font-semibold mb-4">
-              Vacaciones Solicitadas
-            </h2>
+            <h2 className="text-2xl font-semibold mb-4">Vacaciones Solicitadas</h2>
             <div className="overflow-x-auto">
               <DataTable data={vacaciones} columns={vacacionesColumns} />
             </div>
