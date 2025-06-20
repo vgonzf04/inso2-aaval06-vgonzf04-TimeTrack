@@ -2,35 +2,34 @@ package models
 
 import "time"
 
-type Vacacion struct {
-	ID         uint      `gorm:"primaryKey" json:"id"`
-	EmpleadoID uint      `gorm:"not null" json:"empleado_id"` // ID del empleado que solicita la vacación
-	Empleado   Empleado  `gorm:"foreignKey:EmpleadoID" json:"empleado"`
+// Vacation represents a time-off request by an employee.
+type Vacation struct {
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	EmployeeID   uint      `gorm:"not null" json:"employee_id"`   // ID of the requesting employee
+	Employee     Employee  `gorm:"foreignKey:EmployeeID" json:"employee"`
 
-	Inicio time.Time  `json:"inicio"` // se serializará como RFC3339
-	Fin    *time.Time `json:"fin"`    // puntero para poder ser nil si aún no se ha establecido
+	// Actual date fields
+	StartDate    time.Time  `json:"start_date"`
+	EndDate      *time.Time `json:"end_date"`                     // nil until end date is set
 
-	Estado string `json:"estado"` // "pendiente", "aprobada", "rechazada"`
+	Status       string     `json:"status"`                       // "pending", "approved", "rejected"
 
-	// Campos auxiliares (no se guardan en BD) para enviar la fecha formateada "dd-mm-aaaa"
-	InicioStr string `gorm:"-" json:"inicioStr"`
-	FinStr    string `gorm:"-" json:"finStr"`
+	// Auxiliary fields for formatted dates (DD-MM-YYYY)
+	StartDateStr string     `gorm:"-" json:"start_date_str"`
+	EndDateStr   string     `gorm:"-" json:"end_date_str"`
 }
 
-// FormatearFechas rellena InicioStr y FinStr en formato "dd-mm-aaaa"
-func (v *Vacacion) FormatearFechas() {
+// FormatDates fills StartDateStr and EndDateStr in "02-01-2006" format.
+func (v *Vacation) FormatDates() {
 	loc, err := time.LoadLocation("Europe/Madrid")
 	if err != nil {
 		loc = time.UTC
 	}
 
-	// Formatear Inicio como "02-01-2006"
-	v.InicioStr = v.Inicio.In(loc).Format("02-01-2006")
-
-	// Si Fin no es nil, formatearlo; si es nil, dejar cadena vacía
-	if v.Fin != nil {
-		v.FinStr = v.Fin.In(loc).Format("02-01-2006")
+	v.StartDateStr = v.StartDate.In(loc).Format("02-01-2006")
+	if v.EndDate != nil {
+		v.EndDateStr = v.EndDate.In(loc).Format("02-01-2006")
 	} else {
-		v.FinStr = ""
+		v.EndDateStr = ""
 	}
 }

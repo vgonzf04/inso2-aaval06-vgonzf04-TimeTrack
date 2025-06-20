@@ -3,9 +3,8 @@ package controllers
 import (
 	"log"
 	"net/http"
-	"time"
-
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -14,309 +13,253 @@ import (
 	"AppWebPruebaEmpleados/models"
 )
 
-// CrearVacacion crea una solicitud de vacaciones. Si quien la solicita es supervisor,
-// el estado será "aprobada"; si es empleado, quedará "pendiente". No se comprueban solapamientos.
-func CrearVacacion(c *gin.Context) {
-	// 1. Cargar JSON de entrada
+// CreateVacation creates a vacation request.
+// Supervisors’ requests auto-approve; employees’ remain “pending”.
+func CreateVacation(c *gin.Context) {
+	// 1. Bind input JSON
 	var input struct {
-		Inicio string `json:"inicio" binding:"required"`
-		Fin    string `json:"fin" binding:"required"`
+		Start string `json:"start" binding:"required"`
+		End   string `json:"end"   binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "JSON inválido o faltan campos"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON or missing fields"})
 		return
 	}
 
-	// 2. Parsear fechas "YYYY-MM-DD"
-	fechaInicio, err1 := time.Parse("2006-01-02", input.Inicio)
-	fechaFin, err2 := time.Parse("2006-01-02", input.Fin)
+	// 2. Parse dates
+	startDate, err1 := time.Parse("2006-01-02", input.Start)
+	endDate,   err2 := time.Parse("2006-01-02", input.End)
 	if err1 != nil || err2 != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Formato de fecha inválido. Debe ser YYYY-MM-DD"})
-		return
-	}
-	// 3. Validación: inicio <= fin
-	if fechaFin.Before(fechaInicio) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "`fin` debe ser igual o posterior a `inicio`"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid date format. Use YYYY-MM-DD"})
 		return
 	}
 
-	// 5. Extraer rol y usuario_id del contexto
-	idRaw, existsID := c.Get("usuario_id")
-	rolRaw, existsRol := c.Get("rol_usuario")
-	if !existsID || !existsRol {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
-		return
-	}
-	rolUsuario, okRol := rolRaw.(string)
-	if !okRol {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
+	// 3. Validate range
+	if endDate.Before(startDate) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "`end` must be same or after `start`"})
 		return
 	}
 
-	// 4. Verificar que el empleado exista
+	// 4. Auth context
+	idRaw, hasID := c.Get("usuario_id")
+	roleRaw, hasRole := c.Get("rol_usuario")
+	if !hasID || !hasRole {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+		return
+	}
+	userRole, ok := roleRaw.(string)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal error reading user role"})
+		return
+	}
+
+	// 5. Ensure employee exists
 	var emp models.Empleado
 	if err := config.DB.First(&emp, idRaw).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Empleado no encontrado"})
+			c.JSON(http.StatusNotFound, gin.H{"error": "Employee not found"})
 		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al buscar empleado"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error fetching employee"})
 		}
 		return
 	}
 
-	// 6. Si es supervisor, verificar que pueda crear vacación para este empleado
-	/*if rolUsuario == "supervisor" {
-		var subordinado models.Empleado
-		err := config.DB.
-			Where("id = ? AND supervisor_id = ?", idRaw, usuarioID).
-			First(&subordinado).Error
-		if err != nil {
-			if err == gorm.ErrRecordNotFound {
-				c.JSON(http.StatusForbidden, gin.H{"error": "No puedes crear vacación para un empleado que no te pertenece"})
-			} else {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al verificar empleado subordinado"})
-			}
-			return
-		}
-	} else if rolUsuario != "empleado" {
-		// Cualquier otro rol distinto de supervisor/empleado no está autorizado
-		c.JSON(http.StatusForbidden, gin.H{"error": "Rol no autorizado para crear vacación"})
-		return
-	}*/
-
-	// 7. Determinar el estado inicial
-	estadoInicial := "pendiente"
-	if rolUsuario == "supervisor" {
-		estadoInicial = "aprobada"
+	// 6. Determine initial status
+	status := "pending"
+	if userRole == "supervisor" {
+		status = "approved"
 	}
 
-	// 8. Crear la vacación con ese estado (sin guardar en BD)
-	v := models.Vacacion{
+	// 7. Create vacation record
+	vac := models.Vacacion{
 		EmpleadoID: emp.ID,
 		Empleado:   emp,
-		Inicio:     fechaInicio,
-		Fin:        &fechaFin,
-		Estado:     estadoInicial,
+		Inicio:     startDate,
+		Fin:        &endDate,
+		Estado:     status,
 	}
-
-	
-	if err := config.DB.Create(&v).Error; err != nil {
-		log.Printf("Error al crear vacaciones en BD: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "No se pudo crear la solicitud de vacaciones"})
+	if err := config.DB.Create(&vac).Error; err != nil {
+		log.Printf("Error creating vacation: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create vacation request"})
 		return
-
-		
 	}
-	c.JSON(http.StatusCreated, v)
 
+	c.JSON(http.StatusCreated, vac)
 }
 
-// ListarVacaciones devuelve todas las solicitudes (puede filtrar por empleado_id, estado, rango fechas)
-// ListarVacaciones devuelve las vacaciones según el rol del usuario autenticado:
-//   - Si es "supervisor": trae todas las vacacione s de sus empleados asignados (e.supervisor_id = usuarioID)
-//     además de sus propias vacacione s (vacacion.empleado_id = usuarioID).
-//   - Si es "empleado": solo trae las vacacione s donde vacacion.empleado_id = usuarioID.
-//
-// Adicionalmente, acepta filtros opcionales: empleado_id, estado, desde, hasta.
-func ListarVacaciones(c *gin.Context) {
-    // 1) Obtener usuario_id y rol_usuario del contexto
-    idRaw, existsID := c.Get("usuario_id")
-    if !existsID {
-        c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
-        return
-    }
-    usuarioID, okID := idRaw.(uint)
-    if !okID {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
-        return
-    }
+// ListVacations returns only the caller’s own vacation requests.
+func ListVacations(c *gin.Context) {
+	// Auth context
+	idRaw, ok := c.Get("usuario_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+		return
+	}
+	userID, castOK := idRaw.(uint)
+	if !castOK {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal error reading user ID"})
+		return
+	}
 
-    var vacas []models.Vacacion
-    // 2) Solo filtro propio: empleado_id = usuarioID
-    if err := config.DB.Preload("Empleado").
-        Where("empleado_id = ?", usuarioID).
-        Find(&vacas).Error; err != nil && err != gorm.ErrRecordNotFound {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar mis solicitudes de vacaciones"})
-        return
-    }
+	// Fetch own vacations
+	var vacs []models.Vacacion
+	if err := config.DB.Preload("Empleado").
+		Where("empleado_id = ?", userID).
+		Find(&vacs).Error; err != nil && err != gorm.ErrRecordNotFound {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching your vacation requests"})
+		return
+	}
 
-    // 3) (Opcional) Formatear fechas si tu modelo tiene un método similar a FormatearFechas()
-    for i := range vacas {
-        vacas[i].FormatearFechas()
-    }
+	// Format dates
+	for i := range vacs {
+		vacs[i].FormatearFechas()
+	}
 
-    // 4) Responder con mis vacaciones
-    c.JSON(http.StatusOK, vacas)
-}
-func ListarVacacionesEmpleados(c *gin.Context) {
-    // 1) Obtener usuario_id y rol_usuario del contexto
-    idRaw, existsID := c.Get("usuario_id")
-    rolRaw, existsRol := c.Get("rol_usuario")
-    if !existsID || !existsRol {
-        c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
-        return
-    }
-    usuarioID, okID := idRaw.(uint)
-    rolUsuario, okRol := rolRaw.(string)
-    if !okID || !okRol {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
-        return
-    }
-
-    if rolUsuario != "supervisor" {
-        c.JSON(http.StatusForbidden, gin.H{"error": "Solo supervisores pueden ver las vacacione s de empleados"})
-        return
-    }
-
-    var vacas []models.Vacacion
-    if err := config.DB.
-        Preload("Empleado").
-        Joins("JOIN empleados e ON e.id = vacacions.empleado_id").
-        Where("e.supervisor_id = ?", usuarioID).
-        Find(&vacas).Error; err != nil && err != gorm.ErrRecordNotFound {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar vacacione s de empleados"})
-        return
-    }
-
-    for i := range vacas {
-        vacas[i].FormatearFechas()
-    }
-
-    c.JSON(http.StatusOK, vacas)
+	c.JSON(http.StatusOK, vacs)
 }
 
-
-// AprobarVacacion cambia el estado de la solicitud a "aprobada"
-// AprobarVacacion permite que sólo un supervisor apruebe una solicitud
-// de vacaciones si la solicitud está en estado "pendiente" y el empleado
-// pertenece a ese supervisor. Un empleado normal recibe 403 Forbidden.
-func AprobarVacacion(c *gin.Context) {
-	// 1) Extraer usuario_id y rol_usuario del contexto
-	idRaw, existsID := c.Get("usuario_id")
-	rolRaw, existsRol := c.Get("rol_usuario")
-	if !existsID || !existsRol {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
+// ListEmployeeVacations returns all subordinates’ vacation requests (supervisor only).
+func ListEmployeeVacations(c *gin.Context) {
+	// Auth + role check
+	idRaw, hasID := c.Get("usuario_id")
+	roleRaw, hasRole := c.Get("rol_usuario")
+	if !hasID || !hasRole {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
 		return
 	}
-	usuarioID, okID := idRaw.(uint)
-	rolUsuario, okRol := rolRaw.(string)
-	if !okID || !okRol {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
+	userID, _ := idRaw.(uint)
+	userRole, _ := roleRaw.(string)
+	if userRole != "supervisor" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only supervisors can view employees’ vacations"})
 		return
 	}
 
-	// 2) Sólo supervisores pueden aprobar
-	if rolUsuario != "supervisor" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Acceso denegado: solo supervisores pueden aprobar solicitudes"})
+	// Fetch subordinates’ requests
+	var vacs []models.Vacacion
+	if err := config.DB.
+		Preload("Empleado").
+		Joins("JOIN empleados e ON e.id = vacacions.empleado_id").
+		Where("e.supervisor_id = ?", userID).
+		Find(&vacs).Error; err != nil && err != gorm.ErrRecordNotFound {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching employees’ vacations"})
 		return
 	}
 
-	// 3) Parsear el ID de la vacación
-	paramID := c.Param("id")
-	vacIDUint64, err := strconv.ParseUint(paramID, 10, 32)
+	for i := range vacs {
+		vacs[i].FormatearFechas()
+	}
+
+	c.JSON(http.StatusOK, vacs)
+}
+
+// ApproveVacation allows a supervisor to approve a pending request.
+func ApproveVacation(c *gin.Context) {
+	// Auth + role
+	idRaw, hasID := c.Get("usuario_id")
+	roleRaw, hasRole := c.Get("rol_usuario")
+	if !hasID || !hasRole {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+		return
+	}
+	userID, _ := idRaw.(uint)
+	userRole, _ := roleRaw.(string)
+	if userRole != "supervisor" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only supervisors can approve requests"})
+		return
+	}
+
+	// Vacation ID
+	param := c.Param("id")
+	vacID, err := strconv.ParseUint(param, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ID inválido"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid vacation ID"})
 		return
 	}
-	vacacionID := uint(vacIDUint64)
 
-	// 4) Cargar la vacación sólo si pertenece a un empleado asignado a este supervisor
-	var v models.Vacacion
+	// Load and verify belongs to subordinate
+	var vac models.Vacacion
 	result := config.DB.
 		Joins("JOIN empleados e ON e.id = vacacions.empleado_id").
-		Where("vacacions.id = ? AND e.supervisor_id = ?", vacacionID, usuarioID).
-		First(&v)
+		Where("vacacions.id = ? AND e.supervisor_id = ?", uint(vacID), userID).
+		First(&vac)
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Solicitud no encontrada o no pertenece a sus empleados"})
+			c.JSON(http.StatusNotFound, gin.H{"error": "Request not found or not your subordinate’s"})
 		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al buscar la solicitud"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error fetching request"})
 		}
 		return
 	}
 
-	// 5) Sólo si está en estado "pendiente" se permite aprobar
-	if v.Estado != "pendiente" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Solo se pueden aprobar solicitudes en estado 'pendiente'"})
+	// Only pending can be approved
+	if vac.Estado != "pending" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Only pending requests can be approved"})
 		return
 	}
 
-	// 6) Cambiar estado a "aprobada" y guardar
-	v.Estado = "aprobada"
-	if err := config.DB.Save(&v).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al aprobar la solicitud"})
+	// Approve and save
+	vac.Estado = "approved"
+	if err := config.DB.Save(&vac).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to approve request"})
 		return
 	}
 
-	// 7) Preload empleado para la respuesta
-	config.DB.Preload("Empleado").First(&v, v.ID)
-
-	c.JSON(http.StatusOK, v)
+	config.DB.Preload("Empleado").First(&vac, vac.ID)
+	c.JSON(http.StatusOK, vac)
 }
 
-// RechazarVacacion permite que sólo un supervisor rechace una solicitud
-// de vacaciones si la solicitud está en estado "pendiente" y el empleado
-// pertenece a ese supervisor. Un empleado normal recibe 403 Forbidden.
-func RechazarVacacion(c *gin.Context) {
-	// 1) Extraer usuario_id y rol_usuario del contexto
-	idRaw, existsID := c.Get("usuario_id")
-	rolRaw, existsRol := c.Get("rol_usuario")
-	if !existsID || !existsRol {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
+// RejectVacation allows a supervisor to reject a pending request.
+func RejectVacation(c *gin.Context) {
+	// Auth + role
+	idRaw, hasID := c.Get("usuario_id")
+	roleRaw, hasRole := c.Get("rol_usuario")
+	if !hasID || !hasRole {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
 		return
 	}
-	usuarioID, okID := idRaw.(uint)
-	rolUsuario, okRol := rolRaw.(string)
-	if !okID || !okRol {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
-		return
-	}
-
-	// 2) Sólo supervisores pueden rechazar
-	if rolUsuario != "supervisor" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Acceso denegado: solo supervisores pueden rechazar solicitudes"})
+	userID, _ := idRaw.(uint)
+	userRole, _ := roleRaw.(string)
+	if userRole != "supervisor" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only supervisors can reject requests"})
 		return
 	}
 
-	// 3) Parsear el ID de la vacación
-	paramID := c.Param("id")
-	vacIDUint64, err := strconv.ParseUint(paramID, 10, 32)
+	// Vacation ID
+	param := c.Param("id")
+	vacID, err := strconv.ParseUint(param, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ID inválido"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid vacation ID"})
 		return
 	}
-	vacacionID := uint(vacIDUint64)
 
-	// 4) Cargar la vacación sólo si pertenece a un empleado asignado a este supervisor
-	var v models.Vacacion
+	// Load and verify subordinate
+	var vac models.Vacacion
 	result := config.DB.
 		Joins("JOIN empleados e ON e.id = vacacions.empleado_id").
-		Where("vacacions.id = ? AND e.supervisor_id = ?", vacacionID, usuarioID).
-		First(&v)
+		Where("vacacions.id = ? AND e.supervisor_id = ?", uint(vacID), userID).
+		First(&vac)
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Solicitud no encontrada o no pertenece a sus empleados"})
+			c.JSON(http.StatusNotFound, gin.H{"error": "Request not found or not your subordinate’s"})
 		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al buscar la solicitud"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error fetching request"})
 		}
 		return
 	}
 
-	// 5) Sólo si está en estado "pendiente" se permite rechazar
-	if v.Estado != "pendiente" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Solo se pueden rechazar solicitudes en estado 'pendiente'"})
+	// Only pending can be rejected
+	if vac.Estado != "pending" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Only pending requests can be rejected"})
 		return
 	}
 
-	// 6) Cambiar estado a "rechazada" y guardar
-	v.Estado = "rechazada"
-	if err := config.DB.Save(&v).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al rechazar la solicitud"})
+	// Reject and save
+	vac.Estado = "rejected"
+	if err := config.DB.Save(&vac).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reject request"})
 		return
 	}
 
-	// 7) Preload empleado para la respuesta
-	config.DB.Preload("Empleado").First(&v, v.ID)
-
-	c.JSON(http.StatusOK, v)
+	config.DB.Preload("Empleado").First(&vac, vac.ID)
+	c.JSON(http.StatusOK, vac)
 }

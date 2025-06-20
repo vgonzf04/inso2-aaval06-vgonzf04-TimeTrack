@@ -1,16 +1,16 @@
 package models
 
-// Empleado representa a un trabajador de la empresa
-type Empleado struct {
-	ID uint `gorm:"primaryKey" json:"id"` // ID único autoincremental
+// Employee represents a company worker
+type Employee struct {
+    ID uint `gorm:"primaryKey" json:"id"` // Unique auto-incrementing ID
 
-	Nombre string `json:"nombre"`              // Nombre del empleado
-	Email  string `gorm:"unique" json:"email"` // Email único (importante para login o identificación)
-	Cargo  string `json:"cargo"`               // Puesto o rol (ej: Desarrollador, RRHH, etc.)
+    Name     string  `json:"name"`               // Employee’s full name
+    Email    string  `gorm:"unique" json:"email"`// Unique email (used for login/ID)
+    Position string  `json:"position"`           // Job title (e.g. Developer, HR, etc.)
 
-	FechaContratacion string `json:"fecha_contratacion"`
+    HireDate string  `json:"hire_date"`          // ISO date YYYY-MM-DD when they were hired
 
-	// SupervisorID es opcional: puede ser null si el empleado no tiene jefe directo asignado
-	SupervisorID *uint  `json:"supervisor_id"` // ID de su supervisor (otro empleado)
-	Rol          string `json:"rol"`
+    // SupervisorID is optional: nil if no direct supervisor assigned
+    SupervisorID *uint  `json:"supervisor_id"`    // ID of their supervisor (another employee)
+    Role         string `json:"role"`             // "employee" or "supervisor"
 }

@@ -3,194 +3,180 @@ package controllers
 import (
 	"AppWebPruebaEmpleados/config"
 	"AppWebPruebaEmpleados/models"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-	"fmt"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-// ObtenerEmpleadoPorID devuelve un empleado por su ID
-func ObtenerEmpleadoPorID(c *gin.Context) {
-	// 1) Recuperar usuario_id y rol_usuario del contexto (JWTAuth los puso allí)
+// GetEmployeeByID returns an employee by its ID.
+// Only supervisors may call this endpoint.
+func GetEmployeeByID(c *gin.Context) {
+	// 1) Retrieve user_id and user_role from context (set by JWTAuth)
 	idRaw, existsID := c.Get("usuario_id")
-	rolRaw, existsRol := c.Get("rol_usuario")
+	roleRaw, existsRol := c.Get("rol_usuario")
 	if !existsID || !existsRol {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+		return
+	}
+	userID, okID := idRaw.(uint)
+	userRole, okRole := roleRaw.(string)
+	if !okID || !okRole {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal error reading context"})
 		return
 	}
 
-	usuarioID, okID := idRaw.(uint)
-	rolUsuario, okRol := rolRaw.(string)
-	if !okID || !okRol {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
+	// 2) Only supervisors can fetch arbitrary employees
+	if userRole != "supervisor" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: only supervisors can query employees by ID"})
 		return
 	}
 
-	// 2) Si el rol NO es "supervisor", denegar (403)
-	if rolUsuario != "supervisor" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Acceso denegado: solo supervisores pueden consultar empleados por ID"})
-		return
-	}
-
-	// 3) Obtener el ID del empleado solicitado de la URL
+	// 3) Parse the requested employee ID from URL
 	paramID := c.Param("id")
-	empIDUint64, err := strconv.ParseUint(paramID, 10, 32)
+	empID64, err := strconv.ParseUint(paramID, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ID inválido"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
 		return
 	}
-	empleadoID := uint(empIDUint64)
+	empID := uint(empID64)
 
-	// 4) Intentar cargar de la BD al empleado cuyo id = empleadoID
-	//    y cuyo supervisor_id = usuarioID
-	var empleado models.Empleado
-	result := config.DB.
-		Where("id = ? AND supervisor_id = ?", empleadoID, usuarioID).
-		First(&empleado)
-
-	if result.Error != nil {
-		// Si no existe o no pertenece al supervisor, devolvemos 404 Not Found
-		// (o podrías decidir enviar 403 Forbidden, pero convención es 404 para “no existe o no tienes acceso”)
-		c.JSON(http.StatusNotFound, gin.H{"error": "Empleado no encontrado o no pertenece a este supervisor"})
-		return
-	}
-
-	// 5) Finalmente, devolver el empleado encontrado
-	c.JSON(http.StatusOK, empleado)
-}
-
-// ObtenerPerfilUsuario devuelve el registro del empleado autenticado.
-// Extrae "usuario_id" y "rol_usuario" del contexto (JWTAuth ya los puso allí).
-func ObtenerPerfilUsuario(c *gin.Context) {
-	// 1) Extraer del contexto los valores agregados por JWTAuth():
-	//    - "usuario_id" en claims["sub"]
-	//    - "rol_usuario" en claims["rol"]
-	idRaw, existsID := c.Get("usuario_id")
-	if !existsID {
-		// No debería ocurrir si JWTAuth está funcionando correctamente
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
-		return
-	}
-
-	// Convertir el ID a tipo uint
-	usuarioID, okID := idRaw.(uint)
-	if !okID {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
-		return
-	}
-
-	// 2) Hacer select * from empleados where id = usuarioID
+	// 4) Load employee where id = empID AND supervisor_id = userID
 	var emp models.Empleado
-	if err := config.DB.First(&emp, usuarioID).Error; err != nil {
+	if err := config.DB.
+		Where("id = ? AND supervisor_id = ?", empID, userID).
+		First(&emp).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			// Si no existe un registro con ese ID, devolvemos 404
-			c.JSON(http.StatusNotFound, gin.H{"error": "Empleado no encontrado"})
+			c.JSON(http.StatusNotFound, gin.H{"error": "Employee not found or not under your supervision"})
 		} else {
-			// Cualquier otro error de BD
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar perfil"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error fetching employee"})
 		}
 		return
 	}
 
-	// 3) Responder con el JSON del empleado (solo su propio registro)
+	// 5) Return the employee
 	c.JSON(http.StatusOK, emp)
 }
-// CrearEmpleado añade un nuevo empleado
-func CrearEmpleado(c *gin.Context) {
-	var nuevo models.Empleado
-	if err := c.ShouldBindJSON(&nuevo); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Datos inválidos"})
+
+// GetMyProfile returns the profile of the authenticated user.
+func GetMyProfile(c *gin.Context) {
+	// 1) Extract user_id from context
+	idRaw, existsID := c.Get("usuario_id")
+	if !existsID {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+		return
+	}
+	userID, ok := idRaw.(uint)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal error reading context"})
 		return
 	}
 
-	nuevo.FechaContratacion = time.Now().Format("2006-01-02")
-
-	fmt.Printf("✅ JSON recibido: %+v\n", nuevo)
-
-	// Si no se especifica el rol o se envía vacío, asignar por defecto "Empleado"
-	rol := strings.ToLower(strings.TrimSpace(nuevo.Rol))
-
-	if rol == "" || rol == "empleado" {
-		nuevo.Rol = "empleado"
-	} else if rol == "supervisor" {
-		nuevo.Rol = "supervisor"
-		
-	} else {
-		// Si se envía un rol inválido, podrías rechazarlo también
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Rol inválido. Solo se permite 'Empleado' o 'Supervisor'"})
+	// 2) Query the employee by their own ID
+	var emp models.Empleado
+	if err := config.DB.First(&emp, userID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Profile not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error fetching profile"})
+		}
 		return
 	}
 
-	// ✅ Si el rol es "Empleado", validar que el supervisor exista y sea Supervisor
-	if nuevo.SupervisorID != nil {
-		var supervisor models.Empleado
-		if err := config.DB.First(&supervisor, *nuevo.SupervisorID).Error; err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "El supervisor indicado no existe"})
-			return
-		}
-		if strings.ToLower(supervisor.Rol) != "supervisor" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "El empleado asignado como supervisor no tiene rol de 'supervisor'"})
-			return
-		}
-
-		
-	}
-	result := config.DB.Create(&nuevo)
-		if result.Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
-			return
-		}
-
-		c.JSON(http.StatusCreated, nuevo)
+	// 3) Return the employee record
+	c.JSON(http.StatusOK, emp)
 }
 
-// ActualizarEmpleado actualiza un empleado existente
-func ActualizarEmpleado(c *gin.Context) {
-	// 1) Extraer usuario_id y rol_usuario del contexto
+// CreateEmployee adds a new employee.
+func CreateEmployee(c *gin.Context) {
+	var input models.Empleado
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request data"})
+		return
+	}
+
+	// Set hiring date to today
+	input.FechaContratacion = time.Now().Format("2006-01-02")
+	fmt.Printf("✅ Received JSON: %+v\n", input)
+
+	// Normalize and validate role
+	role := strings.ToLower(strings.TrimSpace(input.Rol))
+	if role == "" || role == "empleado" {
+		input.Rol = "empleado"
+	} else if role == "supervisor" {
+		input.Rol = "supervisor"
+	} else {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid role: only 'empleado' or 'supervisor' allowed"})
+		return
+	}
+
+	// If a supervisor_id was provided, verify it exists and is a supervisor
+	if input.SupervisorID != nil {
+		var sup models.Empleado
+		if err := config.DB.First(&sup, *input.SupervisorID).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Specified supervisor does not exist"})
+			return
+		}
+		if strings.ToLower(sup.Rol) != "supervisor" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Assigned supervisor must have role 'supervisor'"})
+			return
+		}
+	}
+
+	if err := config.DB.Create(&input).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, input)
+}
+
+// UpdateEmployee modifies an existing employee.
+// Only supervisors may perform updates, and only on their own subordinates.
+func UpdateEmployee(c *gin.Context) {
+	// 1) Extract user_id and role
 	idRaw, existsID := c.Get("usuario_id")
-	rolRaw, existsRol := c.Get("rol_usuario")
+	roleRaw, existsRol := c.Get("rol_usuario")
 	if !existsID || !existsRol {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
 		return
 	}
-	usuarioID, okID := idRaw.(uint)
-	rolUsuario, okRol := rolRaw.(string)
-	if !okID || !okRol {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
+	userID, okID := idRaw.(uint)
+	userRole, okRole := roleRaw.(string)
+	if !okID || !okRole {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal error reading context"})
+		return
+	}
+	// 2) Only supervisors may update
+	if userRole != "supervisor" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: only supervisors may update employees"})
 		return
 	}
 
-	// 2) Solo supervisores pueden actualizar empleados
-	if rolUsuario != "supervisor" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Acceso denegado: solo supervisores pueden actualizar empleados"})
-		return
-	}
-
-	// 3) Parsear el ID del empleado que se quiere actualizar
+	// Parse target employee ID
 	paramID := c.Param("id")
-	empIDUint64, err := strconv.ParseUint(paramID, 10, 32)
+	empID64, err := strconv.ParseUint(paramID, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ID inválido"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
 		return
 	}
-	empleadoID := uint(empIDUint64)
+	empID := uint(empID64)
 
-	// 4) Cargar de BD al empleado, pero solo si su supervisor_id = usuarioID
-	var empleado models.Empleado
-	result := config.DB.
-		Where("id = ? AND supervisor_id = ?", empleadoID, usuarioID).
-		First(&empleado)
-	if result.Error != nil {
-		// No existe o no está asignado a este supervisor
-		c.JSON(http.StatusNotFound, gin.H{"error": "Empleado no encontrado o no pertenece a este supervisor"})
+	// 3) Load the employee if it's under this supervisor
+	var emp models.Empleado
+	if err := config.DB.
+		Where("id = ? AND supervisor_id = ?", empID, userID).
+		First(&emp).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Employee not found or not under your supervision"})
 		return
 	}
 
-	// 5) Leer JSON entrante en struct auxiliar
-	var datos struct {
+	// 4) Bind update payload
+	var payload struct {
 		Nombre            string `json:"nombre"`
 		Email             string `json:"email"`
 		Cargo             string `json:"cargo"`
@@ -198,133 +184,125 @@ func ActualizarEmpleado(c *gin.Context) {
 		SupervisorID      *uint  `json:"supervisor_id"`
 		Rol               string `json:"rol"`
 	}
-	if err := c.ShouldBindJSON(&datos); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Datos inválidos"})
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request data"})
 		return
 	}
 
-	// 6) Actualizar campos (solo si vienen no vacíos)
-	if datos.Nombre != "" {
-		empleado.Nombre = datos.Nombre
+	// 5) Apply updates if provided
+	if payload.Nombre != "" {
+		emp.Nombre = payload.Nombre
 	}
-	if datos.Email != "" {
-		empleado.Email = datos.Email
+	if payload.Email != "" {
+		emp.Email = payload.Email
 	}
-	if datos.Cargo != "" {
-		empleado.Cargo = datos.Cargo
+	if payload.Cargo != "" {
+		emp.Cargo = payload.Cargo
 	}
-	if datos.FechaContratacion != "" {
-		empleado.FechaContratacion = datos.FechaContratacion
+	if payload.FechaContratacion != "" {
+		emp.FechaContratacion = payload.FechaContratacion
 	}
-	// Cambiar supervisor_id (puede ser null o nuevo ID)
-	empleado.SupervisorID = datos.SupervisorID
+	emp.SupervisorID = payload.SupervisorID
 
-	// 7) Actualizar el rol (solo supervisor puede cambiar rol)
-	if datos.Rol != "" {
-		rolNuevo := strings.ToLower(datos.Rol)
-		if rolNuevo != "empleado" && rolNuevo != "supervisor" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Rol inválido. Solo 'empleado' o 'supervisor'"})
+	if payload.Rol != "" {
+		r := strings.ToLower(strings.TrimSpace(payload.Rol))
+		if r != "empleado" && r != "supervisor" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid role: only 'empleado' or 'supervisor'"})
 			return
 		}
-		empleado.Rol = rolNuevo
+		emp.Rol = r
 	}
 
-	// 8) Guardar cambios en la BD
-	if err := config.DB.Save(&empleado).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al guardar cambios"})
+	// 6) Save changes
+	if err := config.DB.Save(&emp).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error saving changes"})
 		return
 	}
 
-	// 9) Devolver el empleado actualizado
-	c.JSON(http.StatusOK, empleado)
+	c.JSON(http.StatusOK, emp)
 }
 
-// EliminarEmpleado borra un empleado por su ID
-func EliminarEmpleado(c *gin.Context) {
-	// 1) Extraer usuario_id y rol_usuario del contexto
+// DeleteEmployee removes an employee by ID.
+// Only supervisors may delete, and only their own subordinates.
+func DeleteEmployee(c *gin.Context) {
+	// 1) Extract user_id and role
 	idRaw, existsID := c.Get("usuario_id")
-	rolRaw, existsRol := c.Get("rol_usuario")
+	roleRaw, existsRol := c.Get("rol_usuario")
 	if !existsID || !existsRol {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
 		return
 	}
-	usuarioID, okID := idRaw.(uint)
-	rolUsuario, okRol := rolRaw.(string)
-	if !okID || !okRol {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
+	userID, okID := idRaw.(uint)
+	userRole, okRole := roleRaw.(string)
+	if !okID || !okRole {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal error reading context"})
+		return
+	}
+	// 2) Only supervisors may delete
+	if userRole != "supervisor" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: only supervisors may delete employees"})
 		return
 	}
 
-	// 2) Solo supervisores pueden eliminar empleados
-	if rolUsuario != "supervisor" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Acceso denegado: solo supervisores pueden eliminar empleados"})
-		return
-	}
-
-	// 3) Parsear el ID del empleado a eliminar
+	// Parse target ID
 	paramID := c.Param("id")
-	empIDUint64, err := strconv.ParseUint(paramID, 10, 32)
+	empID64, err := strconv.ParseUint(paramID, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ID inválido"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
 		return
 	}
-	empleadoID := uint(empIDUint64)
+	empID := uint(empID64)
 
-	// 4) Intentar cargar al empleado con id = empleadoID y supervisor_id = usuarioID
-	var empleado models.Empleado
-	result := config.DB.
-		Where("id = ? AND supervisor_id = ?", empleadoID, usuarioID).
-		First(&empleado)
-	if result.Error != nil {
-		// No existe o no le pertenece a este supervisor
-		c.JSON(http.StatusNotFound, gin.H{"error": "Empleado no encontrado o no pertenece a este supervisor"})
-		return
-	}
-
-	// 5) Borrar el empleado de la BD
-	if err := config.DB.Delete(&empleado).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al eliminar el empleado"})
+	// 3) Load subordinate
+	var emp models.Empleado
+	if err := config.DB.
+		Where("id = ? AND supervisor_id = ?", empID, userID).
+		First(&emp).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Employee not found or not under your supervision"})
 		return
 	}
 
-	// 6) Responder con 204 No Content o con mensaje de confirmación
-	c.JSON(http.StatusNoContent, nil)
-	// Alternativamente, podrías usar:
-	// c.JSON(http.StatusOK, gin.H{"message": "Empleado eliminado correctamente"})
+	// 4) Delete
+	if err := config.DB.Delete(&emp).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error deleting employee"})
+		return
+	}
+
+	// 5) Return no content
+	c.Status(http.StatusNoContent)
 }
 
-// ObtenerUsuarioAutenticado devuelve los datos del usuario autenticado
-func ObtenerUsuarioAutenticado(c *gin.Context) {
-	// 1) Extraer usuario_id y rol_usuario del contexto
+// GetAuthenticatedUser returns basic info about the logged-in user.
+func GetAuthenticatedUser(c *gin.Context) {
+	// 1) Extract user_id and role
 	idRaw, existsID := c.Get("usuario_id")
-	rolRaw, existsRol := c.Get("rol_usuario")
+	roleRaw, existsRol := c.Get("rol_usuario")
 	if !existsID || !existsRol {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+		return
+	}
+	userID, okID := idRaw.(uint)
+	userRole, okRole := roleRaw.(string)
+	if !okID || !okRole {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal error reading context"})
 		return
 	}
 
-	usuarioID, okID := idRaw.(uint)
-	rolUsuario, okRol := rolRaw.(string)
-	if !okID || !okRol {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
+	// 2) Load user record
+	var emp models.Empleado
+	if err := config.DB.First(&emp, userID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching profile"})
 		return
 	}
 
-	// 2) Cargar el empleado de la BD por su ID
-	var empleado models.Empleado
-	if err := config.DB.First(&empleado, usuarioID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar su perfil"})
-		return
-	}
-
-	// 3) Devolver los datos del empleado (sin contraseña ni datos sensibles)
+	// 3) Return only non-sensitive fields
 	c.JSON(http.StatusOK, gin.H{
-		"id":                 empleado.ID,
-		"nombre":             empleado.Nombre,
-		"email":              empleado.Email,
-		"cargo":              empleado.Cargo,
-		"fecha_contratacion": empleado.FechaContratacion,
-		"supervisor_id":      empleado.SupervisorID,
-		"rol":                rolUsuario, // Devolver el rol del usuario autenticado
+		"id":                  emp.ID,
+		"name":                emp.Nombre,
+		"email":               emp.Email,
+		"position":            emp.Cargo,
+		"hiring_date":         emp.FechaContratacion,
+		"supervisor_id":       emp.SupervisorID,
+		"role":                userRole,
 	})
 }

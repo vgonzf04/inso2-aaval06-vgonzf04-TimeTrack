@@ -11,10 +11,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// JWTAuth valida el token JWT, extrae usuario_id y rol_usuario y los guarda en el contexto.
+// JWTAuth validates the JWT token, extracts user_id and user_role, and stores them in the context.
 func JWTAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 1) Leer la cookie Authorization
+		// 1) Read the "token" cookie
 		authCookie, err := c.Request.Cookie("token")
 		if err != nil {
 			switch {
@@ -29,51 +29,51 @@ func JWTAuth() gin.HandlerFunc {
 
 		tokenString := authCookie.Value
 
-		// 3) Parsear y validar el token usando la clave JWT_SECRET
+		// 2) Parse and validate the token using JWT_SECRET
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			// Verificar método de firma HMAC
+			// Verify HMAC signing method
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("método de firma inesperado: %v", token.Header["alg"])
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 			}
-			// Retornar la clave para verificar firma
+			// Return the key for signature verification
 			return []byte(os.Getenv("JWT_SECRET")), nil
 		})
 		if err != nil || !token.Valid {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token inválido o expirado"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
 			c.Abort()
 			return
 		}
 
-		// 4) Extraer las claims
+		// 3) Extract claims
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Claims inválidas"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid claims"})
 			c.Abort()
 			return
 		}
 
-		// 5) Tomar "sub" como ID de usuario (se almacena como float64)
+		// 4) Get "sub" as user ID (stored as float64)
 		sub, ok := claims["sub"].(float64)
 		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Claim 'sub' no válida"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid 'sub' claim"})
 			c.Abort()
 			return
 		}
-		usuarioID := uint(sub)
+		userID := uint(sub)
 
-		// 6) Tomar "rol" como cadena
-		rol, ok := claims["rol"].(string)
+		// 5) Get "rol" as user role
+		role, ok := claims["rol"].(string)
 		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Claim 'rol' no válida"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid 'role' claim"})
 			c.Abort()
 			return
 		}
 
-		// 7) Guardar en el contexto para que los handlers puedan leerlos
-		c.Set("usuario_id", usuarioID)
-		c.Set("rol_usuario", rol)
+		// 6) Store in context for handlers
+		c.Set("usuario_id", userID)
+		c.Set("rol_usuario", role)
 
-		// 8) Continuar hacia el handler
+		// 7) Continue to handler
 		c.Next()
 	}
 }

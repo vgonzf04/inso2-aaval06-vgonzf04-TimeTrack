@@ -2,36 +2,36 @@ package models
 
 import "time"
 
-type Fichaje struct {
-	ID         uint       `gorm:"primaryKey" json:"id"`
-	EmpleadoID uint       `json:"empleado_id"`
+// TimeEntry represents a clock-in/out record for an employee.
+// JSON tags use camelCase and English field names.
+type TimeEntry struct {
+    ID         uint       `gorm:"primaryKey" json:"id"`
+    EmployeeID uint       `json:"employee_id"`
 
-	// Relación para Preload("Empleado"):
-	Empleado   Empleado   `gorm:"foreignKey:EmpleadoID" json:"empleado,omitempty"`
+    // Preload relation
+    Employee   Employee   `gorm:"foreignKey:EmployeeID" json:"employee,omitempty"`
 
-	// Fecha real, no expuesta directamente en JSON
-	Entrada    time.Time  `json:"-"`
-	Salida     *time.Time `json:"-"`
+    // Raw timestamps (not exposed directly)
+    ClockIn    time.Time  `json:"-"`
+    ClockOut   *time.Time `json:"-"`
 
-	// Campos auxiliares para JSON
-	EntradaStr string     `gorm:"-" json:"entrada"`
-	SalidaStr  string     `gorm:"-" json:"salida,omitempty"`
+    // Formatted timestamps for JSON
+    ClockInStr  string     `gorm:"-" json:"clock_in"`
+    ClockOutStr string     `gorm:"-" json:"clock_out,omitempty"`
 
-	Latitud    float64    `json:"latitud"`
-	Longitud   float64    `json:"longitud"`
-	Ubicacion  string     `json:"ubicacion"`
+    Latitude   float64    `json:"latitude"`
+    Longitude  float64    `json:"longitude"`
+    Location   string     `json:"location"`
 }
 
-// FormatearFechas rellena los campos EntradaStr y SalidaStr
-func (f *Fichaje) FormatearFechas() {
-    // Cargar la zona horaria de Madrid
+// FormatTimestamps fills ClockInStr and ClockOutStr using Europe/Madrid timezone.
+func (t *TimeEntry) FormatTimestamps() {
     loc, err := time.LoadLocation("Europe/Madrid")
     if err != nil {
         loc = time.UTC
     }
-    // Convertir Entrada y Salida a Madrid antes de formatear
-    f.EntradaStr = f.Entrada.In(loc).Format("2006-01-02 15:04:05")
-    if f.Salida != nil {
-        f.SalidaStr = f.Salida.In(loc).Format("2006-01-02 15:04:05")
+    t.ClockInStr = t.ClockIn.In(loc).Format("2006-01-02 15:04:05")
+    if t.ClockOut != nil {
+        t.ClockOutStr = t.ClockOut.In(loc).Format("2006-01-02 15:04:05")
     }
 }

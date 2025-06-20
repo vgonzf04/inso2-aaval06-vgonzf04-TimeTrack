@@ -18,47 +18,46 @@ import (
 	"gorm.io/gorm"
 )
 
+// Me returns the current user's role based on the "token" cookie.
 func Me(c *gin.Context) {
-    // 1) Leemos la cookie “token”
-    tokenString, err := c.Cookie("token")
-    if err != nil {
-        c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
-        return
-    }
+	// 1) Read the “token” cookie
+	tokenString, err := c.Cookie("token")
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+		return
+	}
 
-    // 2) Parseamos y validamos el JWT con la misma secret
-    token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-        return []byte(os.Getenv("JWT_SECRET")), nil
-    })
-    if err != nil || !token.Valid {
-        c.JSON(http.StatusUnauthorized, gin.H{"error": "Token inválido"})
-        return
-    }
+	// 2) Parse and validate the JWT with the same secret
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+	if err != nil || !token.Valid {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+		return
+	}
 
-    // 3) Extraemos los claims (mapa) y sacamos “rol”
-    claims, ok := token.Claims.(jwt.MapClaims)
-    if !ok {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno leyendo token"})
-        return
-    }
-    rolInterfaz, ok := claims["rol"]
-    if !ok {
-        c.JSON(http.StatusUnauthorized, gin.H{"error": "No se encontró rol en claims"})
-        return
-    }
-    rol, ok := rolInterfaz.(string)
-    if !ok {
-        c.JSON(http.StatusUnauthorized, gin.H{"error": "Formato de rol inválido en token"})
-        return
-    }
+	// 3) Extract claims and get “role”
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal error reading token"})
+		return
+	}
+	roleVal, ok := claims["rol"]
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Role claim not found"})
+		return
+	}
+	role, ok := roleVal.(string)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid role format in token"})
+		return
+	}
 
-    // 4) Devolvemos JSON con el rol
-    c.JSON(http.StatusOK, gin.H{
-        "rol": rol,
-    })
+	// 4) Return JSON with the role
+	c.JSON(http.StatusOK, gin.H{"role": role})
 }
 
-
+// GoogleLogin redirects the user to Google's OAuth2 consent page.
 func GoogleLogin(c *gin.Context) {
 	url := config.GoogleOAuthConfig.AuthCodeURL(
 		"random-state",
@@ -68,94 +67,88 @@ func GoogleLogin(c *gin.Context) {
 	c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
+// GoogleCallback handles the OAuth2 callback from Google.
 func GoogleCallback(c *gin.Context) {
 	code := c.Query("code")
 
-	// 1) Intercambiar el código por un token de Google
+	// 1) Exchange the code for a Google token
 	tokenGoogle, err := config.GoogleOAuthConfig.Exchange(context.Background(), code)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al intercambiar token con Google"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to exchange token with Google"})
 		return
 	}
 
-	// 2) Crear servicio de Google para obtener información del usuario
+	// 2) Create Google service to fetch user info
 	svc, err := gservice.NewService(
 		context.Background(),
 		option.WithTokenSource(config.GoogleOAuthConfig.TokenSource(context.Background(), tokenGoogle)),
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al crear servicio de Google"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create Google service"})
 		return
 	}
 
-	// 3) Obtener datos del usuario (email, nombre, foto, etc.)
+	// 3) Get user info (email, name, picture, etc.)
 	userInfo, err := gservice.NewUserinfoV2MeService(svc).Get().Do()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al obtener información del usuario"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user info from Google"})
 		return
 	}
 
-	// 4) Guardar o actualizar el usuario en vuestra base de datos
-	//    Suponiendo que tienes un modelo Empleado con campos Email, Nombre, Rol, etc.
+	// 4) Save or update the user in the database
 	var emp models.Empleado
 	result := config.DB.Where("email = ?", userInfo.Email).First(&emp)
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
-			// 4.a) Si no existe, lo creamos con Rol = "empleado" por defecto
-			log.Println("Usuario no encontrado, creando nuevo registro:", userInfo)
+			// 4.a) If not found, create with default role "employee"
+			log.Println("User not found, creating new record:", userInfo)
 			emp = models.Empleado{
 				Nombre:            userInfo.Name,
 				Email:             userInfo.Email,
-				Cargo:             "", // o lo que quieras asignar por defecto
+				Cargo:             "",
 				FechaContratacion: time.Now().Format("2006-01-02"),
 				SupervisorID:      nil,
-				Rol:               "empleado", // nuevo campo
+				Rol:               "employee",
 			}
 			if err := config.DB.Create(&emp).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al crear usuario en BD"})
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user in database"})
 				return
 			}
 		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al buscar usuario en BD"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database lookup error"})
 			return
 		}
-	} else {
-		// 4.b) Si ya existe, puedes opcionalmente actualizar Nombre/foto/etc. si lo deseas.
-		// emp.Nombre = userInfo.Name
-		// config.DB.Save(&emp)
 	}
 
-	// 5) Crear las claims del JWT, incluyendo el campo "rol"
-	// … tras crear o recuperar emp de la BD …
+	// 5) Build JWT claims including "role"
 	claims := jwt.MapClaims{
 		"sub": emp.ID,
 		"rol": emp.Rol,
-		"exp": time.Now().Add(time.Hour * 24).Unix(),
+		"exp": time.Now().Add(24 * time.Hour).Unix(),
 	}
 	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := jwtToken.SignedString([]byte(os.Getenv("JWT_SECRET")))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al generar token JWT"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate JWT"})
 		return
 	}
 
+	// Set the cookie and redirect to the dashboard
 	c.SetCookie("token", tokenString, 3600, "/", "", false, true)
-	// Hasta aquí guardas el JWT en la cookie “token”
 	c.Redirect(http.StatusFound, "http://localhost:3001/dashboard")
-
 }
 
+// Logout clears the authentication cookie.
 func Logout(c *gin.Context) {
-	// Para eliminar una cookie, se le da MaxAge = -1
+	// To delete a cookie, set MaxAge < 0
 	c.SetCookie(
-		"token",    // nombre de la cookie
-		"",         // valor vacío
-		-1,         // MaxAge negativo => se elimina
-		"/",        // path
-		"",         // domain (vacío usa el host actual)
-		false,      // secure (ponelo en true si usás HTTPS)
-		true,       // httpOnly
+		"token",
+		"",
+		-1,
+		"/",
+		"",
+		false,
+		true,
 	)
-
-	c.JSON(http.StatusOK, gin.H{"message": "Sesión cerrada correctamente"})
+	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
 }

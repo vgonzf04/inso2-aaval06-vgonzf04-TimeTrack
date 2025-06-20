@@ -14,7 +14,7 @@ import (
 
 var DB *gorm.DB
 
-func ConectarBD() {
+func ConnectDB() {
 	host := os.Getenv("DB_HOST")
 	user := os.Getenv("DB_USER")
 	password := os.Getenv("DB_PASSWORD")
@@ -35,16 +35,16 @@ func ConectarBD() {
 
 	err := backoff.Retry(operation, backoff.NewExponentialBackOff())
 	if err != nil {
-		log.Fatalf("❌ Error al conectar con la base de datos: %v", err)
+		log.Fatalf("❌ Failed to connect to the database: %v", err)
 	}
 
 	DB = db
-	fmt.Println("✅ Conexión a la base de datos establecida")
+	fmt.Println("✅ Database connection established")
 
 	err = DB.AutoMigrate(&models.Empleado{}, &models.Fichaje{}, &models.Vacacion{})
 	if err != nil {
-		log.Fatalf("❌ Error al migrar modelos: %v", err)
+		log.Fatalf("❌ Failed to migrate models: %v", err)
 	}
 
-	fmt.Println("✅ Migración completada")
+	fmt.Println("✅ Migration completed")
 }

@@ -16,334 +16,307 @@ import (
 	"AppWebPruebaEmpleados/models"
 )
 
-// CrearFichaje crea un nuevo registro de fichaje (marca la entrada)
-// JSON esperado en el body: { "empleado_id": <int>, "latitud": <float>, "longitud": <float> }
-func CrearFichaje(c *gin.Context) {
+// CreateTimeEntry marks the start of a time entry.
+// Expects JSON: { "lat": <float>, "lng": <float> }
+func CreateTimeEntry(c *gin.Context) {
+	// 1) Authentication context
 	idRaw, existsID := c.Get("usuario_id")
-	rolRaw, existsRol := c.Get("rol_usuario")
+	roleRaw, existsRol := c.Get("rol_usuario")
 	if !existsID || !existsRol {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
 		return
 	}
-	usuarioID, okID := idRaw.(uint)
-	rolUsuario, okRol := rolRaw.(string)
+	userID, okID := idRaw.(uint)
+	userRole, okRole := roleRaw.(string)
+	if !okID || !okRole {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal error reading context"})
+		return
+	}
+	// Only employees or supervisors may punch in
+	if userRole != "empleado" && userRole != "supervisor" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Role not authorized to create time entries"})
+		return
+	}
 
-	// Validar que el usuario tenga rol de empleado o supervisor
-	if rolUsuario != "empleado" && rolUsuario != "supervisor" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Rol no autorizado para crear fichajes"})
-		return
-	}
+	// Verify employee exists
 	var emp models.Empleado
-
-	if err := config.DB.First(&emp, usuarioID).Error; err != nil {
+	if err := config.DB.First(&emp, userID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Empleado no encontrado"})
-			return
+			c.JSON(http.StatusNotFound, gin.H{"error": "Employee not found"})
+		} else {
+			log.Printf("Error fetching employee: %v\n", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error fetching employee"})
 		}
-		log.Printf("Error al buscar empleado: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al buscar empleado"})
 		return
 	}
 
-	if !okID || !okRol {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
-		return
-	}
-
-	// 1. Struct para bindear el JSON entrante:
+	// 2) Bind JSON input
 	var input struct {
-		Latitud  float64 `json:"latitud"`
-		Longitud float64 `json:"longitud"`
+		Lat float64 `json:"lat"`
+		Lng float64 `json:"lng"`
 	}
-
-	// 2. Intentar bindear JSON; si falla, devolvemos el error exacto
 	if err := c.ShouldBindJSON(&input); err != nil {
-		log.Printf("Error al hacer ShouldBindJSON en CrearFichaje: %v\n", err)
+		log.Printf("JSON bind error in CreateTimeEntry: %v\n", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// 3. Validar que no exista ya un fichaje abierto para este empleado
-	var abierto models.Fichaje
+	// 3) Ensure no open entry exists
+	var open models.Fichaje
 	err := config.DB.
 		Where("empleado_id = ? AND salida IS NULL", emp.ID).
-		First(&abierto).Error
-
+		First(&open).Error
 	if err == nil {
-		// Ya existe un fichaje abierto (no se cerró)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Ya tienes un fichaje abierto. Cierra primero el anterior"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "You already have an open time entry. Close it first"})
 		return
 	}
 	if err != nil && err != gorm.ErrRecordNotFound {
-		// Algo falló al consultar la base de datos
-		log.Printf("Error al comprobar fichajes abiertos: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al comprobar fichajes abiertos"})
+		log.Printf("Error checking open entries: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error checking open entries"})
 		return
 	}
 
-	// 4. Obtener dirección mediante reverse-geocoding
-	direccion := obtenerDireccionGoogle(input.Latitud, input.Longitud)
+	// 4) Reverse geocode
+	address := reverseGeocode(input.Lat, input.Lng)
 
-	// Cargar hora actual
+	// 5) Create entry
 	loc, err := time.LoadLocation("Europe/Madrid")
 	if err != nil {
-		log.Printf("No se pudo cargar zona Europe/Madrid, usando UTC: %v\n", err)
+		log.Printf("Could not load Europe/Madrid, using UTC: %v\n", err)
 		loc = time.UTC
 	}
-	ahora := time.Now().In(loc)
+	now := time.Now().In(loc)
 
-	// 5. Crear el registro de fichaje con la hora de entrada actual
-	f := models.Fichaje{
+	entry := models.Fichaje{
 		EmpleadoID: emp.ID,
-		Entrada:    ahora,
-		Latitud:    input.Latitud,
-		Longitud:   input.Longitud,
-		Ubicacion:  direccion,
-		Salida:     nil,
+		Entrada:    now,
+		Latitud:    input.Lat,
+		Longitud:   input.Lng,
+		Ubicacion:  address,
 	}
 
-	if err := config.DB.Create(&f).Error; err != nil {
-		log.Printf("Error al crear fichaje en BD: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "No se pudo crear el fichaje"})
+	if err := config.DB.Create(&entry).Error; err != nil {
+		log.Printf("Error creating time entry: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create time entry"})
 		return
 	}
 
-	// 6. *Recargar* el registro recién creado para traer la relación Empleado
-	//    (con Preload cargamos todos los datos del empleado asociado).
-	if err := config.DB.
-		Preload("Empleado").
-		First(&f, f.ID).Error; err != nil {
-		log.Printf("Error al hacer Preload de Empleado: %v\n", err)
-		// Aunque falle el Preload, podemos devolver el fichaje sin datos de empleado
+	// 6) Preload employee
+	if err := config.DB.Preload("Empleado").First(&entry, entry.ID).Error; err != nil {
+		log.Printf("Preload error: %v\n", err)
 	}
 
-	// 7. Formatear las fechas (rellena f.EntradaStr y f.SalidaStr)
-	f.FormatearFechas()
+	// 7) Format dates
+	entry.FormatearFechas()
 
-	// 8. Devolver el objeto completo en JSON (incluye datos de empleado y "entrada" formateada)
-	c.JSON(http.StatusCreated, f)
+	// 8) Return
+	c.JSON(http.StatusCreated, entry)
 }
 
-// CerrarFichaje actualiza la hora de salida de un fichaje abierto
-// No necesita body, se toma la hora actual como "salida".
-func CerrarFichaje(c *gin.Context) {
-	// 1. Obtener el parámetro :id de la URL
+// CloseTimeEntry marks the end of an open time entry.
+// No body required.
+func CloseTimeEntry(c *gin.Context) {
+	// 1) ID from URL
 	id := c.Param("id")
 
-	// 2. Buscar el fichaje por ID, incluyendo la relación Empleado
-	var f models.Fichaje
-	if err := config.DB.Preload("Empleado").First(&f, id).Error; err != nil {
+	// 2) Load entry
+	var entry models.Fichaje
+	if err := config.DB.Preload("Empleado").First(&entry, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Fichaje no encontrado"})
+			c.JSON(http.StatusNotFound, gin.H{"error": "Time entry not found"})
 		} else {
-			log.Printf("Error al buscar fichaje (ID=%s): %v\n", id, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al buscar el fichaje"})
+			log.Printf("Error loading entry ID=%s: %v\n", id, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error loading time entry"})
 		}
 		return
 	}
 
-	// 3. Verificar si ya tiene salida asignada
-	if f.Salida != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Este fichaje ya fue cerrado"})
+	// 3) Already closed?
+	if entry.Salida != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "This time entry is already closed"})
 		return
 	}
 
-	// 4. Cargar la zona horaria Europe/Madrid
+	// 4) Set exit time
 	loc, err := time.LoadLocation("Europe/Madrid")
 	if err != nil {
-		log.Printf("No se pudo cargar zona Europe/Madrid, usando UTC: %v\n", err)
+		log.Printf("Could not load Europe/Madrid, using UTC: %v\n", err)
 		loc = time.UTC
 	}
-	salida := time.Now().In(loc)
+	exitTime := time.Now().In(loc)
 
-	// 5. Actualizar SOLO el campo Salida en la base de datos
-	//    Usamos Updates(map[string]interface{}) para no sobreescribir otros campos
-	if err := config.DB.Model(&f).Updates(map[string]interface{}{"salida": &salida}).Error; err != nil {
-		log.Printf("Error al guardar la salida del fichaje (ID=%s): %v\n", id, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "No se pudo cerrar el fichaje"})
+	// 5) Update only salida
+	if err := config.DB.Model(&entry).Updates(map[string]interface{}{"salida": &exitTime}).Error; err != nil {
+		log.Printf("Error updating exit time for ID=%s: %v\n", id, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to close time entry"})
 		return
 	}
 
-	// 6. Recargar el registro para asegurarnos de tener la relación Empleado actualizada
-	//    y el campo Salida en la estructura Go
-	if err := config.DB.Preload("Empleado").First(&f, id).Error; err != nil {
-		log.Printf("Error al recargar fichaje tras cerrar (ID=%s): %v\n", id, err)
-		// Aunque falle el Preload, devolvemos el fichaje con la salida ya asignada
+	// 6) Reload
+	if err := config.DB.Preload("Empleado").First(&entry, id).Error; err != nil {
+		log.Printf("Reload error after closing entry ID=%s: %v\n", id, err)
 	}
 
-	// 7. Formatear fechas (Entrada y Salida) antes de devolver
-	f.FormatearFechas()
+	// 7) Format dates
+	entry.FormatearFechas()
 
-	// 8. Retornar el fichaje completo en JSON
-	c.JSON(http.StatusOK, f)
+	// 8) Return
+	c.JSON(http.StatusOK, entry)
 }
-func ObtenerFichajeActual(c *gin.Context) {
-	// 1. Extraer usuario_id y rol_usuario del contexto (JWTAuth los puso)
+
+// GetCurrentTimeEntry returns the currently open time entry for the user.
+func GetCurrentTimeEntry(c *gin.Context) {
+	// 1) Auth context
 	idRaw, existsID := c.Get("usuario_id")
-	rolRaw, existsRol := c.Get("rol_usuario")
+	roleRaw, existsRol := c.Get("rol_usuario")
 	if !existsID || !existsRol {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
 		return
 	}
-	usuarioID, okID := idRaw.(uint)
-	rolUsuario, okRol := rolRaw.(string)
-	if !okID || !okRol {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
+	userID, okID := idRaw.(uint)
+	userRole, okRole := roleRaw.(string)
+	if !okID || !okRole {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal error reading context"})
 		return
 	}
 
-	// 2. Buscar el fichaje abierto del usuario
-	var fichaje models.Fichaje
+	// 2) Query open entry
+	var entry models.Fichaje
 	db := config.DB.Preload("Empleado")
 
-	switch rolUsuario {
+	switch userRole {
 	case "supervisor":
-		// 2a) Supervisor: busca fichajes abiertos de sus empleados y el suyo propio
 		err := db.
 			Joins("JOIN empleados e ON e.id = fichajes.empleado_id").
-			Where("(e.supervisor_id = ? OR fichajes.empleado_id = ?) AND fichajes.salida IS NULL", usuarioID, usuarioID).
-			First(&fichaje).Error
+			Where("(e.supervisor_id = ? OR fichajes.empleado_id = ?) AND fichajes.salida IS NULL", userID, userID).
+			First(&entry).Error
 		if err != nil {
 			if err == gorm.ErrRecordNotFound {
-				c.JSON(http.StatusNotFound, gin.H{"error": "No hay fichaje abierto para este usuario"})
+				c.JSON(http.StatusNotFound, gin.H{"error": "No open time entry for this user"})
 			} else {
-				log.Printf("Error al buscar fichaje actual: %v\n", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar fichaje actual"})
+				log.Printf("Error fetching current entry: %v\n", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error fetching current time entry"})
 			}
 			return
 		}
-
 	case "empleado":
-		// 2b) Empleado normal: busca su propio fichaje abierto
 		err := db.
-			Where("empleado_id = ? AND salida IS NULL", usuarioID).
-			First(&fichaje).Error
+			Where("empleado_id = ? AND salida IS NULL", userID).
+			First(&entry).Error
 		if err != nil {
 			if err == gorm.ErrRecordNotFound {
-				c.JSON(http.StatusNotFound, gin.H{"error": "No hay fichaje abierto para este usuario"})
+				c.JSON(http.StatusNotFound, gin.H{"error": "No open time entry for this user"})
 			} else {
-				log.Printf("Error al buscar fichaje actual: %v\n", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar fichaje actual"})
+				log.Printf("Error fetching current entry: %v\n", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error fetching current time entry"})
 			}
 			return
 		}
-
 	default:
-		// 2c) Cualquier otro rol no autorizado
-		c.JSON(http.StatusForbidden, gin.H{"error": "Rol no autorizado para consultar fichaje actual"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "Role not authorized to view current time entry"})
 		return
 	}
 
-	// 3. Si llegamos aquí, sí tenemos un fichaje abierto: respondemos con JSON
-	c.JSON(http.StatusOK, fichaje)
+	c.JSON(http.StatusOK, entry)
 }
 
-
-// ListarFichajes obtiene el historial de fichajes
-// Permite query params opcionales: empleado_id, desde (YYYY-MM-DD), hasta (YYYY-MM-DD)
-func ListarFichajes(c *gin.Context) {
-	// 1) Obtener usuario_id y rol_usuario del contexto
+// ListTimeEntries returns historic entries.
+// Supports optional ?empleado_id, ?from=YYYY-MM-DD, ?to=YYYY-MM-DD
+func ListTimeEntries(c *gin.Context) {
+	// 1) Auth context
 	idRaw, existsID := c.Get("usuario_id")
-	rolRaw, existsRol := c.Get("rol_usuario")
+	roleRaw, existsRol := c.Get("rol_usuario")
 	if !existsID || !existsRol {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "No autenticado"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
 		return
 	}
-	usuarioID, okID := idRaw.(uint)
-	rolUsuario, okRol := rolRaw.(string)
-	if !okID || !okRol {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al leer contexto"})
+	userID, okID := idRaw.(uint)
+	userRole, okRole := roleRaw.(string)
+	if !okID || !okRole {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal error reading context"})
 		return
 	}
 
-	// 2) Preparamos la consulta:
-	var fichajes []models.Fichaje
-	db := config.DB.Preload("Empleado") // Preload para que a JSON venga { empleado: { nombre, ... } }
+	// 2) Build query
+	var entries []models.Fichaje
+	db := config.DB.Preload("Empleado")
 
-	switch rolUsuario {
+	switch userRole {
 	case "supervisor":
-		err := db.
+		if err := db.
 			Joins("JOIN empleados e ON e.id = fichajes.empleado_id").
-			Where("(e.supervisor_id = ? OR fichajes.empleado_id = ?) ", usuarioID, usuarioID).
-			Find(&fichajes).Error
-		if err != nil && err != gorm.ErrRecordNotFound {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar fichajes"})
+			Where("(e.supervisor_id = ? OR fichajes.empleado_id = ?)", userID, userID).
+			Find(&entries).Error; err != nil && err != gorm.ErrRecordNotFound {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error listing time entries"})
 			return
 		}
 
 	case "empleado":
-		err := db.
-			Where("empleado_id = ?", usuarioID).
-			Find(&fichajes).Error
-		if err != nil && err != gorm.ErrRecordNotFound {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error al consultar fichajes"})
+		if err := db.
+			Where("empleado_id = ?", userID).
+			Find(&entries).Error; err != nil && err != gorm.ErrRecordNotFound {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error listing time entries"})
 			return
 		}
 
 	default:
-		c.JSON(http.StatusForbidden, gin.H{"error": "Rol no autorizado para listar fichajes"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "Role not authorized to list time entries"})
 		return
 	}
 
-	// 3) Antes de enviar, formateamos cada registro
-	for i := range fichajes {
-		fichajes[i].FormatearFechas()
+	// 3) Format dates
+	for i := range entries {
+		entries[i].FormatearFechas()
 	}
 
-	// 4) Devolvemos el slice completo, con campos EntradaStr y SalidaStr ya rellenos
-	c.JSON(http.StatusOK, fichajes)
+	c.JSON(http.StatusOK, entries)
 }
 
-// obtenerDireccionGoogle hace una petición al API de Google Maps Reverse Geocoding
-// y devuelve la dirección textual (formatted_address) del primer resultado.
-// Si algo falla, devuelve "".
-func obtenerDireccionGoogle(lat, lng float64) string {
-    apiKey := os.Getenv("GOOGLE_MAPS_API_KEY")
-    if apiKey == "" {
-        return ""
-    }
-    url := fmt.Sprintf(
-        "https://maps.googleapis.com/maps/api/geocode/json?latlng=%f,%f&key=%s",
-        lat, lng, apiKey,
-    )
+// reverseGeocode calls Google Maps API Reverse Geocoding
+func reverseGeocode(lat, lng float64) string {
+	apiKey := os.Getenv("GOOGLE_MAPS_API_KEY")
+	if apiKey == "" {
+		return ""
+	}
+	url := fmt.Sprintf(
+		"https://maps.googleapis.com/maps/api/geocode/json?latlng=%f,%f&key=%s",
+		lat, lng, apiKey,
+	)
 
-    resp, err := http.Get(url)
-    if err != nil {
-        log.Printf("Error al llamar a Google Maps: %v\n", err)
-        return ""
-    }
-    defer resp.Body.Close()
+	resp, err := http.Get(url)
+	if err != nil {
+		log.Printf("Error calling Google Maps: %v\n", err)
+		return ""
+	}
+	defer resp.Body.Close()
 
-    body, err := ioutil.ReadAll(resp.Body)
-    if err != nil {
-        log.Printf("Error al leer body de Google Maps: %v\n", err)
-        return ""
-    }
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Error reading Google Maps body: %v\n", err)
+		return ""
+	}
 
-    var resultado struct {
-        Results []struct {
-            FormattedAddress string   `json:"formatted_address"`
-            Types            []string `json:"types"`
-        } `json:"results"`
-        Status string `json:"status"`
-    }
-    if err := json.Unmarshal(body, &resultado); err != nil {
-        log.Printf("Error al parsear JSON de Google Maps: %v\n", err)
-        return ""
-    }
-    if resultado.Status != "OK" || len(resultado.Results) == 0 {
-        return ""
-    }
+	var result struct {
+		Results []struct {
+			FormattedAddress string   `json:"formatted_address"`
+			Types            []string `json:"types"`
+		} `json:"results"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		log.Printf("Error parsing Google Maps JSON: %v\n", err)
+		return ""
+	}
+	if result.Status != "OK" || len(result.Results) == 0 {
+		return ""
+	}
 
-    // Buscar el primer Result que tenga "street_address" en Types
-    for _, r := range resultado.Results {
-        for _, t := range r.Types {
-            if t == "street_address" || t == "route" {
-                return r.FormattedAddress
-            }
-        }
-    }
-
-    // Si no encontramos street_address, devolvemos el FormattedAddress del primer resultado
-    return resultado.Results[0].FormattedAddress
+	for _, r := range result.Results {
+		for _, t := range r.Types {
+			if t == "street_address" || t == "route" {
+				return r.FormattedAddress
+			}
+		}
+	}
+	return result.Results[0].FormattedAddress
 }

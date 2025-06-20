@@ -6,14 +6,20 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RegistrarRutasEmpleado configura todas las rutas REST para empleados
-func RegistrarRutasEmpleado(rg *gin.RouterGroup) {
-	empleadoGroup := rg.Group("/empleados")
+// RegisterEmployeeRoutes sets up all REST routes for employees
+func RegisterEmployeeRoutes(rg *gin.RouterGroup) {
+	employeeGroup := rg.Group("/employees")
 	{
-		empleadoGroup.GET("/me", controllers.ObtenerPerfilUsuario)    // Listar datos empleado
-		empleadoGroup.GET("/:id", controllers.ObtenerEmpleadoPorID) // Obtener uno
-		//empleadoGroup.POST("/", controllers.CrearEmpleado)             // Crear nuevo
-		empleadoGroup.PUT("/:id", controllers.ActualizarEmpleado)  // Actualizar
-		empleadoGroup.DELETE("/:id", controllers.EliminarEmpleado) // Eliminar
+		// GET /employees/me       → return authenticated user’s profile
+		employeeGroup.GET("/me", controllers.GetUserProfile)
+
+		// GET /employees/:id      → return a specific employee by ID
+		employeeGroup.GET("/:id", controllers.GetEmployeeByID)
+
+		// PUT /employees/:id      → update an existing employee
+		employeeGroup.PUT("/:id", controllers.UpdateEmployee)
+
+		// DELETE /employees/:id   → delete an employee
+		employeeGroup.DELETE("/:id", controllers.DeleteEmployee)
 	}
 }

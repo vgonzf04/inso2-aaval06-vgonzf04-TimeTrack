@@ -5,17 +5,17 @@ import (
 	"AppWebPruebaEmpleados/controllers"
 )
 
-func RegistrarRutasDashboard(rg *gin.RouterGroup) {
-	dash := rg.Group("/dashboard")
+// RegisterDashboardRoutes registers all /dashboard endpoints under a RouterGroup.
+func RegisterDashboardRoutes(rg *gin.RouterGroup) {
+	dashboard := rg.Group("/dashboard")
 	{
-		// 1. Horas trabajadas por empleado en un período (filtro opcional por empleado o supervisor)
-		dash.GET("/horas-periodo", controllers.HorasTrabajadasPorPeriodo)
+		// 1. Get worked hours per employee over a period (optional empleado_id filter)
+		dashboard.GET("/hours-period", controllers.HoursWorkedInPeriod)
 
-		// 2. Número de fichajes abiertos y cerrados en un día dado
-		dash.GET("/fichajes-dia", controllers.FichajesPorDia)
+		// 2. Count open and closed check-ins for a given day
+		dashboard.GET("/checkins-day", controllers.CheckinsByDay)
 
-		// 3. Solicitudes de vacaciones por estado
-		dash.GET("/vacaciones-por-estado", controllers.VacacionesPorEstado)
-
+		// 3. Group vacation requests by status
+		dashboard.GET("/vacations-by-status", controllers.VacationsByStatus)
 	}
 }

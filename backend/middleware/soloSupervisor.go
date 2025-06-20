@@ -6,26 +6,28 @@ import (
     "github.com/gin-gonic/gin"
 )
 
-// SoloSupervisores aborta la petición si rol_usuario != "supervisor"
-func SoloSupervisores() gin.HandlerFunc {
+// OnlySupervisors aborts the request if the user's role is not "supervisor".
+func OnlySupervisors() gin.HandlerFunc {
     return func(c *gin.Context) {
-        // 1) Sacar de contexto el valor “rol_usuario”
-        rolIface, exists := c.Get("rol_usuario")
+        // 1) Retrieve "rol_usuario" from context
+        roleIface, exists := c.Get("rol_usuario")
         if !exists {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "No se pudo leer rol del usuario"})
+            // If the role is missing, respond with an internal error
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not retrieve user role from context"})
             c.Abort()
             return
         }
 
-        // 2) Convertir a string
-        rol, ok := rolIface.(string)
-        if !ok || rol != "supervisor" {
-            c.JSON(http.StatusForbidden, gin.H{"error": "Acceso denegado: solo supervisores"})
+        // 2) Assert the value is a string and equals "supervisor"
+        role, ok := roleIface.(string)
+        if !ok || role != "supervisor" {
+            // If not a supervisor, deny access
+            c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: supervisors only"})
             c.Abort()
             return
         }
 
-        // 3) Si es supervisor, continuar
+        // 3) Proceed to the next handler
         c.Next()
     }
 }

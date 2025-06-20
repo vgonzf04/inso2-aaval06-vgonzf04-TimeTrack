@@ -6,21 +6,23 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RegistrarRutasVacacion configura las rutas para las solicitudes de vacaciones
-func RegistrarRutasVacacion(rg *gin.RouterGroup) {
-	vaca := rg.Group("/vacaciones")
+// RegisterVacationRoutes sets up the routes for vacation requests
+func RegisterVacationRoutes(rg *gin.RouterGroup) {
+	vacation := rg.Group("/vacations")
 	{
-		// 1. Solicitar vacaciones (estado inicial = "pendiente")
-		vaca.POST("", controllers.CrearVacacion)
+		// 1. POST   /vacations           → request a vacation (initial state = "pending")
+		vacation.POST("", controllers.CreateVacation)
 
-		// 2. Obtener lista de solicitudes (posibles filtros: empleado_id, estado, desde, hasta)
-		vaca.GET("", controllers.ListarVacaciones)
-		vaca.GET("/empleados", controllers.ListarVacacionesEmpleados)
+		// 2. GET    /vacations           → list my vacation requests (optional filters: employee_id, state, from, to)
+		vacation.GET("", controllers.ListVacations)
 
-		// 3. Aprobar una solicitud: cambia estado a "aprobada"
-		vaca.PUT("/:id/aprobar", controllers.AprobarVacacion)
+		// 3. GET    /vacations/employees → list subordinates’ vacation requests (supervisors only)
+		vacation.GET("/employees", controllers.ListEmployeeVacations)
 
-		// 4. Rechazar una solicitud: cambia estado a "rechazada"
-		vaca.PUT("/:id/rechazar", controllers.RechazarVacacion)
+		// 4. PUT    /vacations/:id/approve → approve a vacation request (state → "approved")
+		vacation.PUT("/:id/approve", controllers.ApproveVacation)
+
+		// 5. PUT    /vacations/:id/reject  → reject a vacation request (state → "rejected")
+		vacation.PUT("/:id/reject", controllers.RejectVacation)
 	}
 }

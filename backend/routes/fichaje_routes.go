@@ -6,19 +6,20 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RegistrarRutasFichaje configura las rutas REST para fichajes
-func RegistrarRutasFichaje(rg *gin.RouterGroup) {
-	fichajeGroup := rg.Group("/fichajes")
+// RegisterTimecardRoutes sets up the REST routes for timecards (punches)
+func RegisterTimecardRoutes(rg *gin.RouterGroup) {
+	timecardGroup := rg.Group("/timecards")
 	{
-		// 1. Un endpoint para crear un fichaje (entrada)
-		fichajeGroup.POST("", controllers.CrearFichaje)
+		// 1. POST   /timecards           → create a new timecard (clock‐in)
+		timecardGroup.POST("", controllers.CreateTimecard)
 
-		// 2. Un endpoint para marcar salida (actualizar horaSalida)
-		fichajeGroup.PUT("/:id/cerrar", controllers.CerrarFichaje)
+		// 2. PUT    /timecards/:id/close → close a timecard (clock‐out)
+		timecardGroup.PUT("/:id/close", controllers.CloseTimecard)
 
-		// 3. Un endpoint para listar fichajes (con posibles query params)
-		fichajeGroup.GET("", controllers.ListarFichajes)
+		// 3. GET    /timecards           → list timecards (with optional query parameters)
+		timecardGroup.GET("", controllers.ListTimecards)
 
-		fichajeGroup.GET("/current", controllers.ObtenerFichajeActual)
+		// 4. GET    /timecards/current   → get the currently open timecard
+		timecardGroup.GET("/current", controllers.GetCurrentTimecard)
 	}
 }
