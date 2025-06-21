@@ -10,8 +10,8 @@ import (
 func RegisterEmployeeRoutes(rg *gin.RouterGroup) {
 	employeeGroup := rg.Group("/employees")
 	{
-		// GET /employees/me       → return authenticated user’s profile
-		employeeGroup.GET("/me", controllers.GetUserProfile)
+		// GET /employees/me       → return authenticated user’s full profile
+		employeeGroup.GET("/me", controllers.GetMyProfile)
 
 		// GET /employees/:id      → return a specific employee by ID
 		employeeGroup.GET("/:id", controllers.GetEmployeeByID)

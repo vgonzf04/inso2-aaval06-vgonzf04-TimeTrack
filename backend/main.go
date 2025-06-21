@@ -1,8 +1,9 @@
 package main
 
 import (
-	"time"
 	"fmt"
+	"time"
+
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -14,11 +15,11 @@ import (
 )
 
 func main() {
-	// 1) Cargar variables de entorno (.env)
+	// 1) Cargar variables de entorno
 	godotenv.Load()
 
-	// 2) Conectar a la BD y hacer AutoMigrate
-	config.ConectarBD()
+	// 2) Conectar a la BD y AutoMigrate
+	config.ConnectDB()
 
 	// 3) Inicializar Google OAuth
 	config.InitGoogleOAuth()
@@ -26,7 +27,7 @@ func main() {
 	// 4) Crear router Gin
 	router := gin.Default()
 
-	// ✅ 5) Activar CORS para permitir peticiones desde el frontend (puerto 3001)
+	// 5) CORS
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:3001"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -35,31 +36,33 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// ── RUTAS PÚBLICAS (sin token JWT) ───────────────────────────────
-	routes.RegistrarRutasAuth(router)
+	// ── RUTAS PÚBLICAS ──────────────────────────────────
+	routes.RegisterAuthRoutes(router)
 
-	// ── RUTAS PROTEGIDAS (requieren JWT válido) ───────────────────────
+	// ── RUTAS PROTEGIDAS (requieren JWT) ───────────────
 	protected := router.Group("/")
 	protected.Use(middleware.JWTAuth())
 	{
-		routes.RegistrarRutasEmpleado(protected)
-		routes.RegistrarRutasFichaje(protected)
-		routes.RegistrarRutasVacacion(protected)
-		routes.RegistrarRutasDashboard(protected)
+		routes.RegisterEmployeeRoutes(protected)
+		routes.RegisterTimecardRoutes(protected)
+		routes.RegisterVacationRoutes(protected)
+		routes.RegisterDashboardRoutes(protected)
 	}
 
-	// ── RUTAS EXCLUSIVAS PARA SUPERVISORES ─────────────────────────────
+	// ── RUTAS SÓLO SUPERVISORES ─────────────────────────
 	supervisorOnly := router.Group("/")
-	supervisorOnly.Use(middleware.JWTAuth())
-	supervisorOnly.Use(middleware.SoloSupervisores())
+	supervisorOnly.Use(middleware.JWTAuth(), middleware.OnlySupervisors())
 	{
-		supervisorOnly.POST("/empleados/", controllers.CrearEmpleado)
+		// POST /employees → crear nuevo empleado
+		supervisorOnly.POST("/employees", controllers.CreateEmployee)
 	}
 
-	// 7) Arrancar el servidor en el puerto 3000
-	router.Run(":3000")
-
+	// Manejo de ruta no encontrada
 	router.NoRoute(func(c *gin.Context) {
 		fmt.Println("🚨 Ruta no encontrada:", c.Request.Method, c.Request.URL.Path)
+		c.JSON(404, gin.H{"error": "Not Found"})
 	})
+
+	// 7) Arrancar servidor
+	router.Run(":3000")
 }

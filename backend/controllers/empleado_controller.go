@@ -17,8 +17,8 @@ import (
 // Only supervisors may call this endpoint.
 func GetEmployeeByID(c *gin.Context) {
 	// 1) Retrieve user_id and user_role from context (set by JWTAuth)
-	idRaw, existsID := c.Get("usuario_id")
-	roleRaw, existsRol := c.Get("rol_usuario")
+	idRaw, existsID := c.Get("user_id")
+	roleRaw, existsRol := c.Get("user_role")
 	if !existsID || !existsRol {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
 		return
@@ -46,7 +46,7 @@ func GetEmployeeByID(c *gin.Context) {
 	empID := uint(empID64)
 
 	// 4) Load employee where id = empID AND supervisor_id = userID
-	var emp models.Empleado
+	var emp models.Employee
 	if err := config.DB.
 		Where("id = ? AND supervisor_id = ?", empID, userID).
 		First(&emp).Error; err != nil {
@@ -65,7 +65,7 @@ func GetEmployeeByID(c *gin.Context) {
 // GetMyProfile returns the profile of the authenticated user.
 func GetMyProfile(c *gin.Context) {
 	// 1) Extract user_id from context
-	idRaw, existsID := c.Get("usuario_id")
+	idRaw, existsID := c.Get("user_id")
 	if !existsID {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
 		return
@@ -77,7 +77,7 @@ func GetMyProfile(c *gin.Context) {
 	}
 
 	// 2) Query the employee by their own ID
-	var emp models.Empleado
+	var emp models.Employee
 	if err := config.DB.First(&emp, userID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Profile not found"})
@@ -93,35 +93,35 @@ func GetMyProfile(c *gin.Context) {
 
 // CreateEmployee adds a new employee.
 func CreateEmployee(c *gin.Context) {
-	var input models.Empleado
+	var input models.Employee
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request data"})
 		return
 	}
 
 	// Set hiring date to today
-	input.FechaContratacion = time.Now().Format("2006-01-02")
+	input.HireDate = time.Now().Format("2006-01-02")
 	fmt.Printf("✅ Received JSON: %+v\n", input)
 
 	// Normalize and validate role
-	role := strings.ToLower(strings.TrimSpace(input.Rol))
-	if role == "" || role == "empleado" {
-		input.Rol = "empleado"
+	role := strings.ToLower(strings.TrimSpace(input.Role))
+	if role == "" || role == "employee" {
+		input.Role = "employee"
 	} else if role == "supervisor" {
-		input.Rol = "supervisor"
+		input.Role = "supervisor"
 	} else {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid role: only 'empleado' or 'supervisor' allowed"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid role: only 'employee' or 'supervisor' allowed"})
 		return
 	}
 
 	// If a supervisor_id was provided, verify it exists and is a supervisor
 	if input.SupervisorID != nil {
-		var sup models.Empleado
+		var sup models.Employee
 		if err := config.DB.First(&sup, *input.SupervisorID).Error; err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Specified supervisor does not exist"})
 			return
 		}
-		if strings.ToLower(sup.Rol) != "supervisor" {
+		if strings.ToLower(sup.Role) != "supervisor" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Assigned supervisor must have role 'supervisor'"})
 			return
 		}
@@ -139,8 +139,8 @@ func CreateEmployee(c *gin.Context) {
 // Only supervisors may perform updates, and only on their own subordinates.
 func UpdateEmployee(c *gin.Context) {
 	// 1) Extract user_id and role
-	idRaw, existsID := c.Get("usuario_id")
-	roleRaw, existsRol := c.Get("rol_usuario")
+	idRaw, existsID := c.Get("user_id")
+	roleRaw, existsRol := c.Get("user_role")
 	if !existsID || !existsRol {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
 		return
@@ -167,7 +167,7 @@ func UpdateEmployee(c *gin.Context) {
 	empID := uint(empID64)
 
 	// 3) Load the employee if it's under this supervisor
-	var emp models.Empleado
+	var emp models.Employee
 	if err := config.DB.
 		Where("id = ? AND supervisor_id = ?", empID, userID).
 		First(&emp).Error; err != nil {
@@ -177,12 +177,12 @@ func UpdateEmployee(c *gin.Context) {
 
 	// 4) Bind update payload
 	var payload struct {
-		Nombre            string `json:"nombre"`
-		Email             string `json:"email"`
-		Cargo             string `json:"cargo"`
-		FechaContratacion string `json:"fecha_contratacion"`
-		SupervisorID      *uint  `json:"supervisor_id"`
-		Rol               string `json:"rol"`
+		Name       string `json:"name"`
+		Email      string `json:"email"`
+		Position   string `json:"position"`
+		HireDate   string `json:"hiring_date"`
+		SupervisorID *uint  `json:"supervisor_id"`
+		Role       string `json:"role"`
 	}
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request data"})
@@ -190,27 +190,27 @@ func UpdateEmployee(c *gin.Context) {
 	}
 
 	// 5) Apply updates if provided
-	if payload.Nombre != "" {
-		emp.Nombre = payload.Nombre
+	if payload.Name != "" {
+		emp.Name = payload.Name
 	}
 	if payload.Email != "" {
 		emp.Email = payload.Email
 	}
-	if payload.Cargo != "" {
-		emp.Cargo = payload.Cargo
+	if payload.Position != "" {
+		emp.Position = payload.Position
 	}
-	if payload.FechaContratacion != "" {
-		emp.FechaContratacion = payload.FechaContratacion
+	if payload.HireDate != "" {
+		emp.HireDate = payload.HireDate
 	}
 	emp.SupervisorID = payload.SupervisorID
 
-	if payload.Rol != "" {
-		r := strings.ToLower(strings.TrimSpace(payload.Rol))
-		if r != "empleado" && r != "supervisor" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid role: only 'empleado' or 'supervisor'"})
+	if payload.Role != "" {
+		r := strings.ToLower(strings.TrimSpace(payload.Role))
+		if r != "employee" && r != "supervisor" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid role: only 'employee' or 'supervisor'"})
 			return
 		}
-		emp.Rol = r
+		emp.Role = r
 	}
 
 	// 6) Save changes
@@ -226,8 +226,8 @@ func UpdateEmployee(c *gin.Context) {
 // Only supervisors may delete, and only their own subordinates.
 func DeleteEmployee(c *gin.Context) {
 	// 1) Extract user_id and role
-	idRaw, existsID := c.Get("usuario_id")
-	roleRaw, existsRol := c.Get("rol_usuario")
+	idRaw, existsID := c.Get("user_id")
+	roleRaw, existsRol := c.Get("user_role")
 	if !existsID || !existsRol {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
 		return
@@ -254,7 +254,7 @@ func DeleteEmployee(c *gin.Context) {
 	empID := uint(empID64)
 
 	// 3) Load subordinate
-	var emp models.Empleado
+	var emp models.Employee
 	if err := config.DB.
 		Where("id = ? AND supervisor_id = ?", empID, userID).
 		First(&emp).Error; err != nil {
@@ -275,8 +275,8 @@ func DeleteEmployee(c *gin.Context) {
 // GetAuthenticatedUser returns basic info about the logged-in user.
 func GetAuthenticatedUser(c *gin.Context) {
 	// 1) Extract user_id and role
-	idRaw, existsID := c.Get("usuario_id")
-	roleRaw, existsRol := c.Get("rol_usuario")
+	idRaw, existsID := c.Get("user_id")
+	roleRaw, existsRol := c.Get("user_role")
 	if !existsID || !existsRol {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
 		return
@@ -289,7 +289,7 @@ func GetAuthenticatedUser(c *gin.Context) {
 	}
 
 	// 2) Load user record
-	var emp models.Empleado
+	var emp models.Employee
 	if err := config.DB.First(&emp, userID).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching profile"})
 		return
@@ -297,12 +297,12 @@ func GetAuthenticatedUser(c *gin.Context) {
 
 	// 3) Return only non-sensitive fields
 	c.JSON(http.StatusOK, gin.H{
-		"id":                  emp.ID,
-		"name":                emp.Nombre,
-		"email":               emp.Email,
-		"position":            emp.Cargo,
-		"hiring_date":         emp.FechaContratacion,
-		"supervisor_id":       emp.SupervisorID,
-		"role":                userRole,
+		"id":            emp.ID,
+		"name":          emp.Name,
+		"email":         emp.Email,
+		"position":      emp.Position,
+		"hiring_date":   emp.HireDate,
+		"supervisor_id": emp.SupervisorID,
+		"role":          userRole,
 	})
 }

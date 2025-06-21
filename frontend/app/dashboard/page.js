@@ -1,170 +1,124 @@
 // frontend/app/dashboard/page.js
 
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
-import { AppSidebar } from "@/components/app-sidebar"
-import { DataTable } from "@/components/data-table"
+import { AppSidebar } from "@/components/app-sidebar";
+import { DataTable } from "@/components/data-table";
 import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbList,
   BreadcrumbPage,
-} from "@/components/ui/breadcrumb"
-import { Separator } from "@/components/ui/separator"
+} from "@/components/ui/breadcrumb";
+import { Separator } from "@/components/ui/separator";
 import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
-} from "@/components/ui/sidebar"
+} from "@/components/ui/sidebar";
 
-import { TimerButton } from "@/components/timer-button"
-import { toast } from "sonner"
-import { DatePicker } from "@/components/date-picker" // Asegúrate de importar DatePicker
+import { TimerButton } from "@/components/timer-button";
 
-export default function Page() {
-  const [rol, setRol] = useState(null)
-  const router = useRouter()
+export default function DashboardPage() {
+  const [role, setRole] = useState(null);
+  const router = useRouter();
 
-  const [fichajes, setFichajes] = useState([])
-  const [vacaciones, setVacaciones] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [timecards, setTimecards] = useState([]);
+  const [vacations, setVacations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // 1) Al montar, pedimos /me, luego fichajes y vacaciones
   useEffect(() => {
-    async function pedirRolYDatos() {
+    async function loadData() {
       try {
-        // a) Obtener rol
-        const resMe = await fetch("http://localhost:3000/me", {
-          method: "GET",
+        // 1) Get my role
+        const meRes = await fetch("http://localhost:3000/auth/me", {
           credentials: "include",
-        })
-        if (!resMe.ok) {
-          router.push("/login")
-          return
+        });
+        if (!meRes.ok) {
+          router.push("/login");
+          return;
         }
-        const dataMe = await resMe.json()
-        setRol(dataMe.rol) // "supervisor" | "empleado"
+        const meData = await meRes.json();
+        setRole(meData.role);
 
-        // b) Cargar fichajes
-        const resF = await fetch("http://localhost:3000/fichajes", {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
+        // 2) Load timecards
+        const tcRes = await fetch("http://localhost:3000/timecards", {
           credentials: "include",
-        })
-        if (resF.status === 401 || resF.status === 403) {
-          router.push("/login")
-          return
+        });
+        if (!tcRes.ok) {
+          router.push("/login");
+          return;
         }
-        if (!resF.ok) throw new Error("Error al cargar fichajes")
-        const dataF = await resF.json()
-        const fichajesFlat = dataF.map((f) => ({
-          id: f.id,
-          empleado: f.empleado?.nombre || "—",
-          entrada: f.entrada || "—",
-          salida: f.salida || "—",
-          latitud: f.latitud ?? "—",
-          longitud: f.longitud ?? "—",
-          ubicacion: f.ubicacion || "—",
-        }))
-        setFichajes(fichajesFlat)
+        const tcData = await tcRes.json();
+        setTimecards(
+          tcData.map((t) => ({
+            id: t.id,
+            employee: t.employee?.name || "—",
+            checkIn: t.checkIn || "—",
+            checkOut: t.checkOut || "—",
+            latitude: t.latitude ?? "—",
+            longitude: t.longitude ?? "—",
+            location: t.location || "—",
+          }))
+        );
 
-        // c) Cargar vacaciones
-        const resV = await fetch("http://localhost:3000/vacaciones", {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
+        // 3) Load vacations
+        const vacRes = await fetch("http://localhost:3000/vacations", {
           credentials: "include",
-        })
-        if (resV.status === 401 || resV.status === 403) {
-          router.push("/login")
-          return
+        });
+        if (!vacRes.ok) {
+          router.push("/login");
+          return;
         }
-        if (!resV.ok) throw new Error("Error al cargar vacaciones")
-        const dataV = await resV.json()
-        const vacasFlat = dataV.map((v) => ({
-          id: v.id,
-          empleado: v.empleado?.nombre || "—",
-          // Su ponía aquí v.inicioStr y v.finStr, pero sabemos que vienen vacíos,
-          // así que preferimos usar directamente v.inicio y v.fin (ISO)
-          fechaInicio: v.inicioStr || v.inicio?.slice(0, 10) || "—",
-          fechaFin: v.finStr || v.fin?.slice(0, 10) || "—",
-          estado: v.estado || v.Estado || "—",
-        }))
-        setVacaciones(vacasFlat)
+        const vacData = await vacRes.json();
+        setVacations(
+          vacData.map((v) => ({
+            id: v.id,
+            employee: v.employee?.name || "—",
+            startDate: v.startStr || v.start?.slice(0, 10) || "—",
+            endDate: v.endStr || v.end?.slice(0, 10) || "—",
+            status: (v.status || v.estado || "—").toLowerCase(),
+          }))
+        );
 
-        setLoading(false)
-      } catch (err) {
-        console.error(err)
-        setError(err.message || "Algo salió mal")
-        setLoading(false)
+        setLoading(false);
+      } catch (e) {
+        console.error(e);
+        setError("Something went wrong");
+        setLoading(false);
       }
     }
 
-    pedirRolYDatos()
-  }, [router])
+    loadData();
+  }, [router]);
 
-  // 2) Callback para fichaje creado
-  function handleFichajeCreado(nuevoFichajeCrudo) {
-    const fichajeFlat = {
-      id: nuevoFichajeCrudo.id,
-      empleado: nuevoFichajeCrudo.empleado?.nombre || "—",
-      entrada: nuevoFichajeCrudo.entrada || "—",
-      salida: nuevoFichajeCrudo.salida || "—",
-      latitud: nuevoFichajeCrudo.latitud ?? "—",
-      longitud: nuevoFichajeCrudo.longitud ?? "—",
-      ubicacion: nuevoFichajeCrudo.ubicacion || "—",
-    }
-    setFichajes((prev) => [...prev, fichajeFlat])
-    toast.success("Fichaje añadido a la tabla")
+  // Callback when a new timecard is created
+  function handleTimecardCreated(raw) {
+    const entry = {
+      id: raw.id,
+      employee: raw.employee?.name || "—",
+      checkIn: raw.checkIn || "—",
+      checkOut: raw.checkOut || "—",
+      latitude: raw.latitude ?? "—",
+      longitude: raw.longitude ?? "—",
+      location: raw.location || "—",
+    };
+    setTimecards((prev) => [...prev, entry]);
+    toast.success("Timecard added");
   }
 
-  // 3) Callback para fichaje cerrado
-  function handleFichajeCerrado(fichajeCerradoCrudo) {
-    const fichajeFlat = {
-      id: fichajeCerradoCrudo.id,
-      salida: fichajeCerradoCrudo.salida || "—",
-    }
-    setFichajes((prev) =>
-      prev.map((f) =>
-        f.id === fichajeFlat.id ? { ...f, salida: fichajeFlat.salida } : f
+  // Callback when a timecard is closed
+  function handleTimecardClosed(raw) {
+    setTimecards((prev) =>
+      prev.map((t) =>
+        t.id === raw.id ? { ...t, checkOut: raw.checkOut || "—" } : t
       )
-    )
-    toast.success("Fichaje cerrado correctamente")
-  }
-
-  // 4) Callback para vacación creada (lo llamará DatePicker)
-  function handleVacacionCreada(nuevaVacacionCruda) {
-    console.log("🔔 handleVacacionCreada ha sido llamado con:", nuevaVacacionCruda)
-
-    // Extraemos fechas asegurándonos de no quedarnos con las cadenas vacías:
-    const fechaInicio =
-      nuevaVacacionCruda.inicioStr ||
-      (nuevaVacacionCruda.inicio ? nuevaVacacionCruda.inicio.slice(0, 10) : "") ||
-      "—"
-    const fechaFin =
-      nuevaVacacionCruda.finStr ||
-      (nuevaVacacionCruda.fin ? nuevaVacacionCruda.fin.slice(0, 10) : "") ||
-      "—"
-
-    const vacaFlat = {
-      id: nuevaVacacionCruda.id,
-      empleado: nuevaVacacionCruda.empleado?.nombre || "—",
-      fechaInicio,
-      fechaFin,
-      estado: nuevaVacacionCruda.estado || nuevaVacacionCruda.Estado || "—",
-    }
-
-    console.log("→ vacaFlat a añadir:", vacaFlat)
-
-    setVacaciones((prev) => {
-      console.log("   Estado previo de vacaciones:", prev)
-      return [...prev, vacaFlat]
-    })
-
-    toast.success("Solicitud de vacación enviada")
+    );
+    toast.success("Timecard closed");
   }
 
   if (loading) {
@@ -172,12 +126,12 @@ export default function Page() {
       <SidebarProvider>
         <AppSidebar />
         <SidebarInset>
-          <div className="flex items-center justify-center h-screen w-full">
-            <p className="text-lg">Cargando datos del dashboard…</p>
+          <div className="flex items-center justify-center h-screen">
+            <p>Loading dashboard…</p>
           </div>
         </SidebarInset>
       </SidebarProvider>
-    )
+    );
   }
 
   if (error) {
@@ -185,42 +139,37 @@ export default function Page() {
       <SidebarProvider>
         <AppSidebar />
         <SidebarInset>
-          <div className="p-4">
-            <p className="text-red-600">Error: {error}</p>
-          </div>
+          <p className="text-red-600">Error: {error}</p>
         </SidebarInset>
       </SidebarProvider>
-    )
+    );
   }
 
-  const fichajesColumns = [
+  const timecardColumns = [
     { header: "ID", accessorKey: "id" },
-    { header: "Empleado", accessorKey: "empleado" },
-    { header: "Entrada", accessorKey: "entrada" },
-    { header: "Salida", accessorKey: "salida" },
-    { header: "Latitud", accessorKey: "latitud" },
-    { header: "Longitud", accessorKey: "longitud" },
-    { header: "Ubicación", accessorKey: "ubicacion" },
-  ]
+    { header: "Employee", accessorKey: "employee" },
+    { header: "Check-In", accessorKey: "checkIn" },
+    { header: "Check-Out", accessorKey: "checkOut" },
+    { header: "Latitude", accessorKey: "latitude" },
+    { header: "Longitude", accessorKey: "longitude" },
+    { header: "Location", accessorKey: "location" },
+  ];
 
-  const vacacionesColumns = [
+  const vacationColumns = [
     { header: "ID", accessorKey: "id" },
-    { header: "Empleado", accessorKey: "empleado" },
-    { header: "Fecha Inicio", accessorKey: "fechaInicio" },
-    { header: "Fecha Fin", accessorKey: "fechaFin" },
-    { header: "Estado", accessorKey: "estado" },
-  ]
+    { header: "Employee", accessorKey: "employee" },
+    { header: "Start Date", accessorKey: "startDate" },
+    { header: "End Date", accessorKey: "endDate" },
+    { header: "Status", accessorKey: "status" },
+  ];
 
   return (
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
-        <header className="bg-background sticky top-0 flex h-16 shrink-0 items-center gap-2 border-b px-4">
+        <header className="bg-background sticky top-0 flex h-16 items-center gap-2 border-b px-4">
           <SidebarTrigger className="-ml-1" />
-          <Separator
-            orientation="vertical"
-            className="mr-2 data-[orientation=vertical]:h-4"
-          />
+          <Separator orientation="vertical" className="mr-2 h-4" />
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
@@ -229,41 +178,41 @@ export default function Page() {
             </BreadcrumbList>
           </Breadcrumb>
 
-          {rol === "supervisor" && (
-            <button
-              type="button"
+          {role === "supervisor" && (
+            <Button
+              size="sm"
+              variant="outline"
               onClick={() => router.push("/admin")}
-              className="ml-auto px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              className="ml-auto"
             >
-              Ir a Administración
-            </button>
+              Go to Admin
+            </Button>
           )}
 
           <TimerButton
-            onFichajeCreado={handleFichajeCreado}
-            onFichajeCerrado={handleFichajeCerrado}
+            onTimecardCreated={handleTimecardCreated}
+            onTimecardClosed={handleTimecardClosed}
           />
         </header>
 
         <div className="flex flex-1 flex-col gap-4 p-4">
-
-          {/* ──────── Tabla de Fichajes ──────── */}
+          {/* Timecards */}
           <section className="mb-8">
-            <h2 className="text-2xl font-semibold mb-4">Listado de Fichajes</h2>
+            <h2 className="text-2xl font-semibold mb-4">Timecards</h2>
             <div className="overflow-x-auto">
-              <DataTable data={fichajes} columns={fichajesColumns} />
+              <DataTable data={timecards} columns={timecardColumns} />
             </div>
           </section>
 
-          {/* ──────── Tabla de Vacaciones ──────── */}
+          {/* Vacations */}
           <section>
-            <h2 className="text-2xl font-semibold mb-4">Vacaciones Solicitadas</h2>
+            <h2 className="text-2xl font-semibold mb-4">Vacation Requests</h2>
             <div className="overflow-x-auto">
-              <DataTable data={vacaciones} columns={vacacionesColumns} />
+              <DataTable data={vacations} columns={vacationColumns} />
             </div>
           </section>
         </div>
       </SidebarInset>
     </SidebarProvider>
-  )
+  );
 }

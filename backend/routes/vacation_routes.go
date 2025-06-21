@@ -13,7 +13,7 @@ func RegisterVacationRoutes(rg *gin.RouterGroup) {
 		// 1. POST   /vacations           → request a vacation (initial state = "pending")
 		vacation.POST("", controllers.CreateVacation)
 
-		// 2. GET    /vacations           → list my vacation requests (optional filters: employee_id, state, from, to)
+		// 2. GET    /vacations           → list my vacation requests
 		vacation.GET("", controllers.ListVacations)
 
 		// 3. GET    /vacations/employees → list subordinates’ vacation requests (supervisors only)

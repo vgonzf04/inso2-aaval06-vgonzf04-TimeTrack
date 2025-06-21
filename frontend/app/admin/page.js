@@ -8,17 +8,14 @@ import { useRouter } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { DataTable } from "@/components/data-table";
 import { SiteHeader } from "@/components/site-header";
-import {
-  SidebarInset,
-  SidebarProvider,
-} from "@/components/ui/sidebar";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
-import CrearEmpleadoForm from "@/components/empleado";
-import EliminarEmpleadoForm from "@/components/eliminarEmpleado";
+import CreateEmployeeForm from "@/components/employee";
+import DeleteEmployeeForm from "@/components/employee-delete";
 
-// Función auxiliar para formatear fecha a "YYYY-MM-DD"
+// Helper to format a Date as YYYY-MM-DD
 function formatYYYYMMDD(d) {
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -29,170 +26,169 @@ function formatYYYYMMDD(d) {
 export default function AdminPage() {
   const router = useRouter();
 
-  // —— Vacaciones solicitadas de todos los empleados ——
-  const [vacaciones, setVacaciones] = useState([]);
+  // ── All vacation requests ──
+  const [vacations, setVacations] = useState([]);
   const [loadingVac, setLoadingVac] = useState(true);
   const [errorVac, setErrorVac] = useState(null);
 
-  // —— Fichajes de hoy ——
-  const [fichajesAbiertos, setFichajesAbiertos] = useState(0);
-  const [fichajesCerrados, setFichajesCerrados] = useState(0);
-  const [loadingFich, setLoadingFich] = useState(true);
-  const [errorFich, setErrorFich] = useState(null);
+  // ── Check-ins today ──
+  const [openCount, setOpenCount] = useState(0);
+  const [closedCount, setClosedCount] = useState(0);
+  const [loadingChecks, setLoadingChecks] = useState(true);
+  const [errorChecks, setErrorChecks] = useState(null);
 
-  // —— Vacaciones por estado ——
-  const [vacPorEstado, setVacPorEstado] = useState([]);
-  const [loadingVacEst, setLoadingVacEst] = useState(true);
-  const [errorVacEst, setErrorVacEst] = useState(null);
+  // ── Vacations by status ──
+  const [vacByStatus, setVacByStatus] = useState([]);
+  const [loadingVacStatus, setLoadingVacStatus] = useState(true);
+  const [errorVacStatus, setErrorVacStatus] = useState(null);
 
-  // —— Horas trabajadas (hoy) ——
-  const [horasHoy, setHorasHoy] = useState([]);
-  const [loadingHoras, setLoadingHoras] = useState(true);
-  const [errorHoras, setErrorHoras] = useState(null);
+  // ── Hours worked today ──
+  const [hoursToday, setHoursToday] = useState([]);
+  const [loadingHours, setLoadingHours] = useState(true);
+  const [errorHours, setErrorHours] = useState(null);
 
-  // —— Tarifa €/h ——  
-  const [tarifa, setTarifa] = useState(15);
+  // ── Hourly rate ──
+  const [rate, setRate] = useState(15);
 
-  // ── useEffect #1: validar /me y cargar vacaciones ──
+  // Fetch all vacation requests
   useEffect(() => {
-    async function fetchVacaciones() {
+    async function loadVacations() {
       try {
-        const me = await fetch("http://localhost:3000/me", {
-          credentials: "include",
-        });
+        const me = await fetch("http://localhost:3000/auth/me", { credentials: "include" });
         if (!me.ok) return router.push("/login");
 
-        const res = await fetch("http://localhost:3000/vacaciones/empleados", {
+        const res = await fetch("http://localhost:3000/vacations/employees", {
           credentials: "include",
         });
-        if (res.status === 401 || res.status === 403) {
-          setLoadingVac(false);
-          return router.push("/login");
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 403) {
+            setLoadingVac(false);
+            return router.push("/login");
+          }
+          throw new Error();
         }
-        if (!res.ok) throw new Error();
-
         const data = await res.json();
-        setVacaciones(
+        setVacations(
           data.map((v) => ({
             id: v.id,
-            empleado: v.empleado?.nombre || "—",
-            fechaInicio: v.inicioStr || "—",
-            fechaFin: v.finStr || "—",
-            estado: (v.estado || "").toLowerCase(),
+            employee: v.empleado?.nombre || "—",
+            startDate: v.inicioStr || "—",
+            endDate: v.finStr || "—",
+            status: (v.estado || "").toLowerCase(),
           }))
         );
-        setLoadingVac(false);
       } catch (e) {
         console.error(e);
-        setErrorVac("Error cargando vacaciones");
+        setErrorVac("Error loading vacations");
+      } finally {
         setLoadingVac(false);
       }
     }
-    fetchVacaciones();
+    loadVacations();
   }, [router]);
 
-  // ── useEffect #2: estadísticas ──
+  // Fetch stats: check-ins, vacations by status, hours
   useEffect(() => {
-    // fichajes hoy
+    const today = formatYYYYMMDD(new Date());
+
+    // A) Check-ins today
     (async () => {
       try {
-        const dia = formatYYYYMMDD(new Date());
         const res = await fetch(
-          `http://localhost:3000/dashboard/fichajes-dia?dia=${dia}`,
+          `http://localhost:3000/dashboard/checkins-day?day=${today}`,
           { credentials: "include" }
         );
         if (!res.ok) {
-          setLoadingFich(false);
+          setErrorChecks("Error loading check-ins");
           return router.push("/login");
         }
-        const { fichajes_abiertos, fichajes_cerrados } = await res.json();
-        setFichajesAbiertos(fichajes_abiertos || 0);
-        setFichajesCerrados(fichajes_cerrados || 0);
+        const { punches_open, punches_closed } = await res.json();
+        setOpenCount(punches_open ?? 0);
+        setClosedCount(punches_closed ?? 0);
       } catch {
-        setErrorFich("Error cargando fichajes");
+        setErrorChecks("Error loading check-ins");
       } finally {
-        setLoadingFich(false);
+        setLoadingChecks(false);
       }
     })();
 
-    // vacaciones por estado
+    // B) Vacations by status
     (async () => {
       try {
         const res = await fetch(
-          "http://localhost:3000/dashboard/vacaciones-por-estado",
+          "http://localhost:3000/dashboard/vacations-by-status",
           { credentials: "include" }
         );
         if (!res.ok) {
-          setLoadingVacEst(false);
+          setErrorVacStatus("Error loading vacation statuses");
           return router.push("/login");
         }
         const data = await res.json();
-        setVacPorEstado(
+        setVacByStatus(
           data.map((x) => ({
-            id: x.estado,
-            estado: x.estado,
-            cantidad: x.cantidad,
+            id: x.state,
+            state: x.state,
+            count: x.quantity,
           }))
         );
       } catch {
-        setErrorVacEst("Error cargando estado");
+        setErrorVacStatus("Error loading vacation statuses");
       } finally {
-        setLoadingVacEst(false);
+        setLoadingVacStatus(false);
       }
     })();
 
-    // horas trabajadas
+    // C) Hours worked today
     (async () => {
       try {
-        const dia = formatYYYYMMDD(new Date());
         const res = await fetch(
-          `http://localhost:3000/dashboard/horas-periodo?inicio=${dia}&fin=${dia}`,
+          `http://localhost:3000/dashboard/hours-period?start=${today}&end=${today}`,
           { credentials: "include" }
         );
         if (!res.ok) {
-          setLoadingHoras(false);
+          setErrorHours("Error loading hours");
           return router.push("/login");
         }
         const data = await res.json();
-        setHorasHoy(
+        setHoursToday(
           data.map((x) => ({
-            id: x.empleado_id,
-            empleado_id: x.empleado_id,
-            nombre: x.nombre,
-            total_horas: x.total_horas,
-            total_minutos: x.total_minutos,
+            id: x.employee_id,
+            employee_id: x.employee_id,
+            name: x.name,
+            total_hours: x.total_hours,
+            total_minutes: x.total_minutes,
           }))
         );
       } catch {
-        setErrorHoras("Error cargando horas");
+        setErrorHours("Error loading hours");
       } finally {
-        setLoadingHoras(false);
+        setLoadingHours(false);
       }
     })();
   }, [router]);
 
-  const horasHoyColumns = [
-    { header: "Empleado ID", accessorKey: "empleado_id" },
-    { header: "Nombre", accessorKey: "nombre" },
+  const hoursColumns = [
+    { header: "Employee ID", accessorKey: "employee_id" },
+    { header: "Name", accessorKey: "name" },
     {
-      header: "Total Horas",
-      accessorKey: "total_horas",
+      header: "Total Hours",
+      accessorKey: "total_hours",
       cell: ({ getValue }) => Number(getValue() ?? 0).toFixed(3),
     },
     {
-      header: "Minutos",
-      accessorKey: "total_minutos",
+      header: "Minutes",
+      accessorKey: "total_minutes",
       cell: ({ getValue }) => Number(getValue() ?? 0).toFixed(2),
     },
     {
       header: "€/h",
-      accessorKey: "tarifa",
-      cell: () => tarifa.toFixed(2),
+      accessorKey: "rate",
+      cell: () => rate.toFixed(2),
     },
     {
       header: "Total €",
-      accessorKey: "total_horas",
-      cell: ({ getValue }) => (getValue() * tarifa).toFixed(2),
+      accessorKey: "total_hours",
+      cell: ({ getValue }) => (getValue() * rate).toFixed(2),
     },
   ];
 
@@ -208,117 +204,98 @@ export default function AdminPage() {
         <SiteHeader />
 
         <div className="flex flex-1 flex-col gap-4 py-4 px-4 lg:px-6">
-          {/* Fichajes de Hoy */}
+
+          {/* ── Check-ins Today ── */}
           <section className="bg-white rounded-lg shadow p-4">
-            <h3 className="text-xl font-medium mb-2">Fichajes (Hoy)</h3>
-            {loadingFich ? (
-              <p>Cargando fichajes…</p>
-            ) : errorFich ? (
-              <p className="text-red-600">{errorFich}</p>
+            <h3 className="text-xl font-medium mb-2">Check-Ins (Today)</h3>
+            {loadingChecks ? (
+              <p>Loading check-ins…</p>
+            ) : errorChecks ? (
+              <p className="text-red-600">{errorChecks}</p>
             ) : (
               <div className="flex gap-6">
                 <div className="flex-1 p-4 bg-gray-100 rounded text-center">
-                  <p className="text-sm text-gray-600">Abiertos</p>
-                  <p className="text-2xl font-semibold">
-                    {fichajesAbiertos}
-                  </p>
+                  <p className="text-sm text-gray-600">Open</p>
+                  <p className="text-2xl font-semibold">{openCount}</p>
                 </div>
                 <div className="flex-1 p-4 bg-gray-100 rounded text-center">
-                  <p className="text-sm text-gray-600">Cerrados</p>
-                  <p className="text-2xl font-semibold">
-                    {fichajesCerrados}
-                  </p>
+                  <p className="text-sm text-gray-600">Closed</p>
+                  <p className="text-2xl font-semibold">{closedCount}</p>
                 </div>
               </div>
             )}
           </section>
 
-          {/* Vacaciones por Estado */}
+          {/* ── Vacations by Status ── */}
           <section className="bg-white rounded-lg shadow p-4">
-            <h3 className="text-xl font-medium mb-2">
-              Vacaciones por Estado
-            </h3>
-            {loadingVacEst ? (
-              <p>Cargando…</p>
-            ) : errorVacEst ? (
-              <p className="text-red-600">{errorVacEst}</p>
+            <h3 className="text-xl font-medium mb-2">Vacations by Status</h3>
+            {loadingVacStatus ? (
+              <p>Loading…</p>
+            ) : errorVacStatus ? (
+              <p className="text-red-600">{errorVacStatus}</p>
             ) : (
               <div className="flex gap-6">
-                {vacPorEstado.map((v) => (
+                {vacByStatus.map((v) => (
                   <div
                     key={v.id}
                     className="flex-1 p-4 bg-gray-100 rounded text-center"
                   >
-                    <p className="text-sm text-gray-600 capitalize">
-                      {v.estado}
-                    </p>
-                    <p className="text-2xl font-semibold">
-                      {v.cantidad}
-                    </p>
+                    <p className="text-sm text-gray-600 capitalize">{v.state}</p>
+                    <p className="text-2xl font-semibold">{v.count}</p>
                   </div>
                 ))}
               </div>
             )}
           </section>
 
-          {/* Horas Trabajadas (Hoy) */}
+          {/* ── Hours Worked (Today) ── */}
           <section className="bg-white rounded-lg shadow p-4">
-            <h3 className="text-xl font-medium mb-2">
-              Horas Trabajadas (Hoy)
-            </h3>
+            <h3 className="text-xl font-medium mb-2">Hours Worked (Today)</h3>
 
-            {/* selector de tarifa */}
             <div className="mb-4 flex items-center gap-2">
-              <label className="font-medium">Tarifa €/h:</label>
+              <label className="font-medium">Hourly Rate (€):</label>
               <input
                 type="number"
                 className="w-24 p-1 border rounded"
-                value={tarifa}
-                onChange={(e) =>
-                  setTarifa(parseFloat(e.target.value) || 0)
-                }
+                value={rate}
+                onChange={(e) => setRate(parseFloat(e.target.value) || 0)}
               />
             </div>
 
-            {loadingHoras ? (
-              <p>Cargando horas…</p>
-            ) : errorHoras ? (
-              <p className="text-red-600">{errorHoras}</p>
+            {loadingHours ? (
+              <p>Loading hours…</p>
+            ) : errorHours ? (
+              <p className="text-red-600">{errorHours}</p>
             ) : (
               <div className="overflow-x-auto">
-                <DataTable data={horasHoy} columns={horasHoyColumns} />
+                <DataTable data={hoursToday} columns={hoursColumns} />
               </div>
             )}
           </section>
 
-          {/* Vacaciones Solicitadas */}
+          {/* ── Vacation Requests ── */}
           <section className="mb-8">
-            <h2 className="text-2xl font-semibold mb-4">
-              Vacaciones Solicitadas
-            </h2>
+            <h2 className="text-2xl font-semibold mb-4">Vacation Requests</h2>
             {loadingVac ? (
-              <p>Cargando vacaciones…</p>
+              <p>Loading vacations…</p>
             ) : errorVac ? (
               <p className="text-red-600">{errorVac}</p>
             ) : (
               <div className="overflow-x-auto">
                 <DataTable
-                  data={vacaciones}
+                  data={vacations}
                   columns={[
                     { header: "ID", accessorKey: "id" },
-                    { header: "Empleado", accessorKey: "empleado" },
+                    { header: "Employee", accessorKey: "employee" },
+                    { header: "Start Date", accessorKey: "startDate" },
+                    { header: "End Date", accessorKey: "endDate" },
+                    { header: "Status", accessorKey: "status" },
                     {
-                      header: "Fecha Inicio",
-                      accessorKey: "fechaInicio",
-                    },
-                    { header: "Fecha Fin", accessorKey: "fechaFin" },
-                    { header: "Estado", accessorKey: "estado" },
-                    {
-                      id: "acciones",
-                      header: "Acciones",
+                      id: "actions",
+                      header: "Actions",
                       cell: ({ row }) => {
                         const v = row.original;
-                        if (v.estado !== "pendiente") return null;
+                        if (v.status !== "pending") return null;
                         return (
                           <div className="flex gap-2">
                             <Button
@@ -327,33 +304,25 @@ export default function AdminPage() {
                               onClick={async () => {
                                 try {
                                   const res = await fetch(
-                                    `http://localhost:3000/vacaciones/${v.id}/aprobar`,
-                                    {
-                                      method: "PUT",
-                                      credentials: "include",
-                                    }
+                                    `http://localhost:3000/vacations/${v.id}/approve`,
+                                    { method: "PUT", credentials: "include" }
                                   );
-                                  if (!res.ok)
-                                    throw new Error("No se pudo aprobar");
-                                  const upd = await res.json();
-                                  setVacaciones((prev) =>
+                                  if (!res.ok) throw new Error();
+                                  const updated = await res.json();
+                                  setVacations((prev) =>
                                     prev.map((x) =>
-                                      x.id === upd.id
-                                        ? {
-                                            ...x,
-                                            estado:
-                                              (upd.estado || "").toLowerCase(),
-                                          }
+                                      x.id === updated.id
+                                        ? { ...x, status: updated.estado }
                                         : x
                                     )
                                   );
-                                  toast.success("Vacación aprobada");
-                                } catch (e) {
-                                  toast.error(e.message);
+                                  toast.success("Vacation approved");
+                                } catch {
+                                  toast.error("Failed to approve");
                                 }
                               }}
                             >
-                              Aprobar
+                              Approve
                             </Button>
                             <Button
                               size="sm"
@@ -361,33 +330,25 @@ export default function AdminPage() {
                               onClick={async () => {
                                 try {
                                   const res = await fetch(
-                                    `http://localhost:3000/vacaciones/${v.id}/rechazar`,
-                                    {
-                                      method: "PUT",
-                                      credentials: "include",
-                                    }
+                                    `http://localhost:3000/vacations/${v.id}/reject`,
+                                    { method: "PUT", credentials: "include" }
                                   );
-                                  if (!res.ok)
-                                    throw new Error("No se pudo rechazar");
-                                  const upd = await res.json();
-                                  setVacaciones((prev) =>
+                                  if (!res.ok) throw new Error();
+                                  const updated = await res.json();
+                                  setVacations((prev) =>
                                     prev.map((x) =>
-                                      x.id === upd.id
-                                        ? {
-                                            ...x,
-                                            estado:
-                                              (upd.estado || "").toLowerCase(),
-                                          }
+                                      x.id === updated.id
+                                        ? { ...x, status: updated.estado }
                                         : x
                                     )
                                   );
-                                  toast.success("Vacación rechazada");
-                                } catch (e) {
-                                  toast.error(e.message);
+                                  toast.success("Vacation rejected");
+                                } catch {
+                                  toast.error("Failed to reject");
                                 }
                               }}
                             >
-                              Rechazar
+                              Reject
                             </Button>
                           </div>
                         );
@@ -399,10 +360,10 @@ export default function AdminPage() {
             )}
           </section>
 
-          {/* Formularios Supervisor */}
+          {/* ── Supervisor Forms ── */}
           <div className="space-y-6 mt-6 w-full">
-            <CrearEmpleadoForm />
-            <EliminarEmpleadoForm />
+            <CreateEmployeeForm />
+            <DeleteEmployeeForm />
           </div>
         </div>
       </SidebarInset>

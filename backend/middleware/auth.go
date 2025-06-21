@@ -15,7 +15,7 @@ import (
 func JWTAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 1) Read the "token" cookie
-		authCookie, err := c.Request.Cookie("token")
+		cookie, err := c.Request.Cookie("token")
 		if err != nil {
 			switch {
 			case errors.Is(err, http.ErrNoCookie):
@@ -24,22 +24,21 @@ func JWTAuth() gin.HandlerFunc {
 				log.Println(err)
 				http.Error(c.Writer, "server error", http.StatusInternalServerError)
 			}
+			c.Abort()
 			return
 		}
+		tokenString := cookie.Value
 
-		tokenString := authCookie.Value
-
-		// 2) Parse and validate the token using JWT_SECRET
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			// Verify HMAC signing method
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		// 2) Parse and validate the JWT using JWT_SECRET
+		token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
+			// Ensure signing method is HMAC
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 			}
-			// Return the key for signature verification
 			return []byte(os.Getenv("JWT_SECRET")), nil
 		})
 		if err != nil || !token.Valid {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
 			c.Abort()
 			return
 		}
@@ -47,7 +46,7 @@ func JWTAuth() gin.HandlerFunc {
 		// 3) Extract claims
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid claims"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token claims"})
 			c.Abort()
 			return
 		}
@@ -55,23 +54,23 @@ func JWTAuth() gin.HandlerFunc {
 		// 4) Get "sub" as user ID (stored as float64)
 		sub, ok := claims["sub"].(float64)
 		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid 'sub' claim"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid 'sub' claim"})
 			c.Abort()
 			return
 		}
 		userID := uint(sub)
 
-		// 5) Get "rol" as user role
-		role, ok := claims["rol"].(string)
+		// 5) Get "role" as user role
+		role, ok := claims["role"].(string)
 		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid 'role' claim"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid 'role' claim"})
 			c.Abort()
 			return
 		}
 
 		// 6) Store in context for handlers
-		c.Set("usuario_id", userID)
-		c.Set("rol_usuario", role)
+		c.Set("user_id", userID)
+		c.Set("user_role", role)
 
 		// 7) Continue to handler
 		c.Next()

@@ -9,19 +9,19 @@ import (
 	"os"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
-
 	"AppWebPruebaEmpleados/config"
 	"AppWebPruebaEmpleados/models"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // CreateTimeEntry marks the start of a time entry.
 // Expects JSON: { "lat": <float>, "lng": <float> }
 func CreateTimeEntry(c *gin.Context) {
 	// 1) Authentication context
-	idRaw, existsID := c.Get("usuario_id")
-	roleRaw, existsRol := c.Get("rol_usuario")
+	idRaw, existsID := c.Get("user_id")
+	roleRaw, existsRol := c.Get("user_role")
 	if !existsID || !existsRol {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
 		return
@@ -33,13 +33,13 @@ func CreateTimeEntry(c *gin.Context) {
 		return
 	}
 	// Only employees or supervisors may punch in
-	if userRole != "empleado" && userRole != "supervisor" {
+	if userRole != "employee" && userRole != "supervisor" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Role not authorized to create time entries"})
 		return
 	}
 
-	// Verify employee exists
-	var emp models.Empleado
+	// 2) Verify employee exists
+	var emp models.Employee
 	if err := config.DB.First(&emp, userID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Employee not found"})
@@ -50,7 +50,7 @@ func CreateTimeEntry(c *gin.Context) {
 		return
 	}
 
-	// 2) Bind JSON input
+	// 3) Bind JSON input
 	var input struct {
 		Lat float64 `json:"lat"`
 		Lng float64 `json:"lng"`
@@ -61,10 +61,10 @@ func CreateTimeEntry(c *gin.Context) {
 		return
 	}
 
-	// 3) Ensure no open entry exists
-	var open models.Fichaje
+	// 4) Ensure no open time entry exists
+	var open models.TimeEntry
 	err := config.DB.
-		Where("empleado_id = ? AND salida IS NULL", emp.ID).
+		Where("employee_id = ? AND end_time IS NULL", emp.ID).
 		First(&open).Error
 	if err == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "You already have an open time entry. Close it first"})
@@ -76,10 +76,10 @@ func CreateTimeEntry(c *gin.Context) {
 		return
 	}
 
-	// 4) Reverse geocode
+	// 5) Reverse geocode
 	address := reverseGeocode(input.Lat, input.Lng)
 
-	// 5) Create entry
+	// 6) Create the new time entry
 	loc, err := time.LoadLocation("Europe/Madrid")
 	if err != nil {
 		log.Printf("Could not load Europe/Madrid, using UTC: %v\n", err)
@@ -87,12 +87,12 @@ func CreateTimeEntry(c *gin.Context) {
 	}
 	now := time.Now().In(loc)
 
-	entry := models.Fichaje{
-		EmpleadoID: emp.ID,
-		Entrada:    now,
-		Latitud:    input.Lat,
-		Longitud:   input.Lng,
-		Ubicacion:  address,
+	entry := models.TimeEntry{
+		EmployeeID: emp.ID,
+		StartTime:  now,
+		Latitude:   input.Lat,
+		Longitude:  input.Lng,
+		Location:   address,
 	}
 
 	if err := config.DB.Create(&entry).Error; err != nil {
@@ -101,27 +101,26 @@ func CreateTimeEntry(c *gin.Context) {
 		return
 	}
 
-	// 6) Preload employee
-	if err := config.DB.Preload("Empleado").First(&entry, entry.ID).Error; err != nil {
+	// 7) Preload employee relationship
+	if err := config.DB.Preload("Employee").First(&entry, entry.ID).Error; err != nil {
 		log.Printf("Preload error: %v\n", err)
 	}
 
-	// 7) Format dates
-	entry.FormatearFechas()
+	// 8) Format the timestamps
+	entry.FormatDates()
 
-	// 8) Return
+	// 9) Return the created entry
 	c.JSON(http.StatusCreated, entry)
 }
 
 // CloseTimeEntry marks the end of an open time entry.
-// No body required.
 func CloseTimeEntry(c *gin.Context) {
-	// 1) ID from URL
+	// 1) Parse entry ID from URL
 	id := c.Param("id")
 
-	// 2) Load entry
-	var entry models.Fichaje
-	if err := config.DB.Preload("Empleado").First(&entry, id).Error; err != nil {
+	// 2) Load the entry (with employee)
+	var entry models.TimeEntry
+	if err := config.DB.Preload("Employee").First(&entry, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Time entry not found"})
 		} else {
@@ -131,13 +130,13 @@ func CloseTimeEntry(c *gin.Context) {
 		return
 	}
 
-	// 3) Already closed?
-	if entry.Salida != nil {
+	// 3) Check it's not already closed
+	if entry.EndTime != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "This time entry is already closed"})
 		return
 	}
 
-	// 4) Set exit time
+	// 4) Set end time
 	loc, err := time.LoadLocation("Europe/Madrid")
 	if err != nil {
 		log.Printf("Could not load Europe/Madrid, using UTC: %v\n", err)
@@ -145,50 +144,46 @@ func CloseTimeEntry(c *gin.Context) {
 	}
 	exitTime := time.Now().In(loc)
 
-	// 5) Update only salida
-	if err := config.DB.Model(&entry).Updates(map[string]interface{}{"salida": &exitTime}).Error; err != nil {
-		log.Printf("Error updating exit time for ID=%s: %v\n", id, err)
+	// 5) Update only the EndTime field
+	if err := config.DB.Model(&entry).
+		Update("end_time", &exitTime).
+		Error; err != nil {
+		log.Printf("Error closing entry ID=%s: %v\n", id, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to close time entry"})
 		return
 	}
 
-	// 6) Reload
-	if err := config.DB.Preload("Empleado").First(&entry, id).Error; err != nil {
+	// 6) Reload with employee
+	if err := config.DB.Preload("Employee").First(&entry, id).Error; err != nil {
 		log.Printf("Reload error after closing entry ID=%s: %v\n", id, err)
 	}
 
-	// 7) Format dates
-	entry.FormatearFechas()
+	// 7) Format the timestamps
+	entry.FormatDates()
 
-	// 8) Return
+	// 8) Return the closed entry
 	c.JSON(http.StatusOK, entry)
 }
 
 // GetCurrentTimeEntry returns the currently open time entry for the user.
 func GetCurrentTimeEntry(c *gin.Context) {
-	// 1) Auth context
-	idRaw, existsID := c.Get("usuario_id")
-	roleRaw, existsRol := c.Get("rol_usuario")
+	idRaw, existsID := c.Get("user_id")
+	roleRaw, existsRol := c.Get("user_role")
 	if !existsID || !existsRol {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
 		return
 	}
-	userID, okID := idRaw.(uint)
-	userRole, okRole := roleRaw.(string)
-	if !okID || !okRole {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal error reading context"})
-		return
-	}
+	userID, _ := idRaw.(uint)
+	userRole, _ := roleRaw.(string)
 
-	// 2) Query open entry
-	var entry models.Fichaje
-	db := config.DB.Preload("Empleado")
+	var entry models.TimeEntry
+	db := config.DB.Preload("Employee")
 
 	switch userRole {
 	case "supervisor":
 		err := db.
-			Joins("JOIN empleados e ON e.id = fichajes.empleado_id").
-			Where("(e.supervisor_id = ? OR fichajes.empleado_id = ?) AND fichajes.salida IS NULL", userID, userID).
+			Joins("JOIN employees e ON e.id = time_entries.employee_id").
+			Where("(e.supervisor_id = ? OR time_entries.employee_id = ?) AND time_entries.end_time IS NULL", userID, userID).
 			First(&entry).Error
 		if err != nil {
 			if err == gorm.ErrRecordNotFound {
@@ -199,9 +194,10 @@ func GetCurrentTimeEntry(c *gin.Context) {
 			}
 			return
 		}
-	case "empleado":
+
+	case "employee":
 		err := db.
-			Where("empleado_id = ? AND salida IS NULL", userID).
+			Where("employee_id = ? AND end_time IS NULL", userID).
 			First(&entry).Error
 		if err != nil {
 			if err == gorm.ErrRecordNotFound {
@@ -212,6 +208,7 @@ func GetCurrentTimeEntry(c *gin.Context) {
 			}
 			return
 		}
+
 	default:
 		c.JSON(http.StatusForbidden, gin.H{"error": "Role not authorized to view current time entry"})
 		return
@@ -220,40 +217,33 @@ func GetCurrentTimeEntry(c *gin.Context) {
 	c.JSON(http.StatusOK, entry)
 }
 
-// ListTimeEntries returns historic entries.
-// Supports optional ?empleado_id, ?from=YYYY-MM-DD, ?to=YYYY-MM-DD
+// ListTimeEntries returns historic entries for the user.
 func ListTimeEntries(c *gin.Context) {
-	// 1) Auth context
-	idRaw, existsID := c.Get("usuario_id")
-	roleRaw, existsRol := c.Get("rol_usuario")
+	idRaw, existsID := c.Get("user_id")
+	roleRaw, existsRol := c.Get("user_role")
 	if !existsID || !existsRol {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
 		return
 	}
-	userID, okID := idRaw.(uint)
-	userRole, okRole := roleRaw.(string)
-	if !okID || !okRole {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal error reading context"})
-		return
-	}
+	userID, _ := idRaw.(uint)
+	userRole, _ := roleRaw.(string)
 
-	// 2) Build query
-	var entries []models.Fichaje
-	db := config.DB.Preload("Empleado")
+	var entries []models.TimeEntry
+	db := config.DB.Preload("Employee")
 
 	switch userRole {
 	case "supervisor":
 		if err := db.
-			Joins("JOIN empleados e ON e.id = fichajes.empleado_id").
-			Where("(e.supervisor_id = ? OR fichajes.empleado_id = ?)", userID, userID).
+			Joins("JOIN employees e ON e.id = time_entries.employee_id").
+			Where("e.supervisor_id = ? OR time_entries.employee_id = ?", userID, userID).
 			Find(&entries).Error; err != nil && err != gorm.ErrRecordNotFound {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error listing time entries"})
 			return
 		}
 
-	case "empleado":
+	case "employee":
 		if err := db.
-			Where("empleado_id = ?", userID).
+			Where("employee_id = ?", userID).
 			Find(&entries).Error; err != nil && err != gorm.ErrRecordNotFound {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error listing time entries"})
 			return
@@ -264,15 +254,15 @@ func ListTimeEntries(c *gin.Context) {
 		return
 	}
 
-	// 3) Format dates
+	// Format all the timestamps
 	for i := range entries {
-		entries[i].FormatearFechas()
+		entries[i].FormatDates()
 	}
 
 	c.JSON(http.StatusOK, entries)
 }
 
-// reverseGeocode calls Google Maps API Reverse Geocoding
+// reverseGeocode calls Google Maps API and returns a formatted address.
 func reverseGeocode(lat, lng float64) string {
 	apiKey := os.Getenv("GOOGLE_MAPS_API_KEY")
 	if apiKey == "" {
@@ -310,7 +300,6 @@ func reverseGeocode(lat, lng float64) string {
 	if result.Status != "OK" || len(result.Results) == 0 {
 		return ""
 	}
-
 	for _, r := range result.Results {
 		for _, t := range r.Types {
 			if t == "street_address" || t == "route" {

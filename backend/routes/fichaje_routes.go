@@ -10,16 +10,16 @@ import (
 func RegisterTimecardRoutes(rg *gin.RouterGroup) {
 	timecardGroup := rg.Group("/timecards")
 	{
-		// 1. POST   /timecards           → create a new timecard (clock‐in)
-		timecardGroup.POST("", controllers.CreateTimecard)
+		// 1. POST   /timecards           → create a new time entry (clock-in)
+		timecardGroup.POST("", controllers.CreateTimeEntry)
 
-		// 2. PUT    /timecards/:id/close → close a timecard (clock‐out)
-		timecardGroup.PUT("/:id/close", controllers.CloseTimecard)
+		// 2. PUT    /timecards/:id/close → close a time entry (clock-out)
+		timecardGroup.PUT("/:id/close", controllers.CloseTimeEntry)
 
-		// 3. GET    /timecards           → list timecards (with optional query parameters)
-		timecardGroup.GET("", controllers.ListTimecards)
+		// 3. GET    /timecards           → list time entries (with optional query parameters)
+		timecardGroup.GET("", controllers.ListTimeEntries)
 
-		// 4. GET    /timecards/current   → get the currently open timecard
-		timecardGroup.GET("/current", controllers.GetCurrentTimecard)
+		// 4. GET    /timecards/current   → get the currently open time entry
+		timecardGroup.GET("/current", controllers.GetCurrentTimeEntry)
 	}
 }

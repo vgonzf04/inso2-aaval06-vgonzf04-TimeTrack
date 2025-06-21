@@ -1,185 +1,232 @@
 // frontend/app/account/page.js
 
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
-import { AppSidebar } from "@/components/app-sidebar"
-import { DataTable } from "@/components/data-table"
+import { AppSidebar } from "@/components/app-sidebar";
+import { DataTable } from "@/components/data-table";
 import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbList,
   BreadcrumbPage,
-} from "@/components/ui/breadcrumb"
-import { Separator } from "@/components/ui/separator"
+} from "@/components/ui/breadcrumb";
+import { Separator } from "@/components/ui/separator";
 import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
-} from "@/components/ui/sidebar"
-import { Button } from "@/components/ui/button"
+} from "@/components/ui/sidebar";
+import { Button } from "@/components/ui/button";
 
 export default function AccountPage() {
-  const router = useRouter()
+  const router = useRouter();
 
-  // —— Perfil —— 
-  const [perfil, setPerfil] = useState(null)
-  const [loadingPerfil, setLoadingPerfil] = useState(true)
-  const [errorPerfil, setErrorPerfil] = useState(null)
+  // —— Profile ——
+  const [profile, setProfile] = useState(null);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [errorProfile, setErrorProfile] = useState(null);
 
-  // —— Horas trabajadas —— 
-  const [horas, setHoras] = useState([])          
-  const [loadingHoras, setLoadingHoras] = useState(true)
-  const [errorHoras, setErrorHoras] = useState(null)
+  // —— Hours Worked ——
+  const [hours, setHours] = useState([]);
+  const [loadingHours, setLoadingHours] = useState(true);
+  const [errorHours, setErrorHours] = useState(null);
 
-  // tarifa fija
-  const tarifa = 15
+  // Fixed rate €/h
+  const rate = 15;
 
-  // Helper YYYY-MM-DD
+  // Helper to format a Date as "YYYY-MM-DD"
   function formatYYYYMMDD(d) {
-    const yyyy = d.getFullYear()
-    const mm = String(d.getMonth() + 1).padStart(2, "0")
-    const dd = String(d.getDate()).padStart(2, "0")
-    return `${yyyy}-${mm}-${dd}`
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
   }
 
+  // 1) Load my profile
   useEffect(() => {
-    async function fetchMiPerfil() {
+    async function fetchProfile() {
       try {
-        const res = await fetch("http://localhost:3000/empleados/me", {
+        const res = await fetch("http://localhost:3000/employees/me", {
           method: "GET",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-        })
+        });
         if (res.status === 401 || res.status === 403) {
-          router.push("/login"); return
+          router.push("/login");
+          return;
         }
-        if (!res.ok) throw new Error("Error al cargar perfil")
-        setPerfil(await res.json())
+        if (!res.ok) throw new Error("Failed to load profile");
+        setProfile(await res.json());
       } catch (err) {
-        setErrorPerfil(err.message)
+        setErrorProfile(err.message);
       } finally {
-        setLoadingPerfil(false)
+        setLoadingProfile(false);
       }
     }
-    fetchMiPerfil()
-  }, [router])
+    fetchProfile();
+  }, [router]);
 
+  // 2) Once profile is loaded, fetch today's hours
   useEffect(() => {
-    if (!perfil?.id) return
-    async function fetchHoras() {
+    if (!profile?.id) return;
+
+    async function fetchHours() {
       try {
-        const hoy = formatYYYYMMDD(new Date())
+        const today = formatYYYYMMDD(new Date());
         const res = await fetch(
-          `http://localhost:3000/dashboard/horas-periodo?inicio=${hoy}&fin=${hoy}&empleado_id=${perfil.id}`,
+          `http://localhost:3000/dashboard/hours-period?start=${today}&end=${today}&employee_id=${profile.id}`,
           { method: "GET", credentials: "include" }
-        )
+        );
         if (res.status === 401 || res.status === 403) {
-          router.push("/login"); return
+          router.push("/login");
+          return;
         }
-        if (!res.ok) throw new Error("Error al cargar horas")
-        const data = await res.json()
-        setHoras(
-          (Array.isArray(data) ? data : []).map(x => ({
-            id: x.empleado_id,
-            empleado_id: x.empleado_id,
-            nombre: x.nombre,
-            total_horas: x.total_horas,
+        if (!res.ok) throw new Error("Failed to load hours worked");
+        const data = await res.json();
+        setHours(
+          (Array.isArray(data) ? data : []).map((x) => ({
+            id: x.employee_id,
+            employee_id: x.employee_id,
+            name: x.name,
+            total_hours: x.total_hours,
           }))
-        )
+        );
       } catch (err) {
-        setErrorHoras(err.message)
+        setErrorHours(err.message);
       } finally {
-        setLoadingHoras(false)
+        setLoadingHours(false);
       }
     }
-    fetchHoras()
-  }, [perfil, router])
 
-  if (loadingPerfil) return (
-    <SidebarProvider><AppSidebar /><SidebarInset>
-      <div className="flex items-center justify-center h-screen"><p>Cargando…</p></div>
-    </SidebarInset></SidebarProvider>
-  )
-  if (errorPerfil) return (
-    <SidebarProvider><AppSidebar /><SidebarInset>
-      <p className="text-red-600">Error: {errorPerfil}</p>
-    </SidebarInset></SidebarProvider>
-  )
+    fetchHours();
+  }, [profile, router]);
 
-  const filasPerfil = [{
-    id: perfil.id,
-    nombre: perfil.nombre,
-    email: perfil.email,
-    cargo: perfil.cargo,
-    fechaContratacion: perfil.fecha_contratacion ?? perfil.FechaContratacion,
-    supervisorID: perfil.supervisor_id ?? perfil.SupervisorID,
-    rol: perfil.rol ?? perfil.Rol,
-  }]
-  const colsPerfil = [
-    { header: "ID", accessorKey: "id" },
-    { header: "Nombre", accessorKey: "nombre" },
-    { header: "Email", accessorKey: "email" },
-    { header: "Cargo", accessorKey: "cargo" },
-    { header: "Fecha Contratación", accessorKey: "fechaContratacion" },
-    { header: "Supervisor ID", accessorKey: "supervisorID" },
-    { header: "Rol", accessorKey: "rol" },
-  ]
+  // Loading & error states for profile
+  if (loadingProfile) {
+    return (
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <div className="flex items-center justify-center h-screen w-full">
+            <p className="text-lg">Loading profile…</p>
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
+    );
+  }
+  if (errorProfile) {
+    return (
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <p className="text-red-600">Error: {errorProfile}</p>
+        </SidebarInset>
+      </SidebarProvider>
+    );
+  }
 
-  const colsHoras = [
-    { header: "Empleado ID", accessorKey: "empleado_id" },
-    { header: "Nombre", accessorKey: "nombre" },
+  // Prepare profile table data
+  const profileRows = [
     {
-      header: "Total Horas",
-      accessorKey: "total_horas",
+      id: profile.id,
+      name: profile.nombre,
+      email: profile.email,
+      position: profile.cargo,
+      hiringDate:
+        profile.fecha_contratacion ?? profile.FechaContratacion ?? "—",
+      supervisorId:
+        profile.supervisor_id ?? profile.SupervisorID ?? "—",
+      role: profile.rol ?? profile.Rol ?? "—",
+    },
+  ];
+  const profileCols = [
+    { header: "ID", accessorKey: "id" },
+    { header: "Name", accessorKey: "name" },
+    { header: "Email", accessorKey: "email" },
+    { header: "Position", accessorKey: "position" },
+    { header: "Hiring Date", accessorKey: "hiringDate" },
+    { header: "Supervisor ID", accessorKey: "supervisorId" },
+    { header: "Role", accessorKey: "role" },
+  ];
+
+  // Prepare hours table columns
+  const hoursCols = [
+    { header: "Employee ID", accessorKey: "employee_id" },
+    { header: "Name", accessorKey: "name" },
+    {
+      header: "Total Hours",
+      accessorKey: "total_hours",
       cell: ({ getValue }) => Number(getValue()).toFixed(3),
     },
     {
       header: "€/h",
-      accessorKey: "tarifa",
-      cell: () => tarifa.toFixed(2),
+      accessorKey: "rate",
+      cell: () => rate.toFixed(2),
     },
     {
       header: "Total €",
-      accessorKey: "total_horas",
-      cell: ({ getValue }) => (getValue() * tarifa).toFixed(2),
+      accessorKey: "total_hours",
+      cell: ({ getValue }) => (getValue() * rate).toFixed(2),
     },
-  ]
+  ];
 
   return (
     <SidebarProvider>
       <AppSidebar />
+
       <SidebarInset>
+        {/* ─── Header ─── */}
         <header className="bg-background sticky top-0 flex h-16 items-center gap-2 border-b px-4">
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="mr-2 h-4" />
-          <Breadcrumb><BreadcrumbList>
-            <BreadcrumbItem><BreadcrumbPage>Mi Cuenta</BreadcrumbPage></BreadcrumbItem>
-          </BreadcrumbList></Breadcrumb>
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbPage>My Account</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
           <div className="ml-auto">
-            <Button size="sm" variant="outline" onClick={() => router.push("/dashboard")}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => router.push("/dashboard")}
+            >
               ← Dashboard
             </Button>
           </div>
         </header>
+        {/* ─── End Header ─── */}
+
         <div className="flex flex-1 flex-col gap-4 p-4">
+          {/* ─── Profile Table ─── */}
           <section>
-            <h2 className="text-2xl font-semibold mb-4">Datos de mi usuario</h2>
-            <DataTable data={filasPerfil} columns={colsPerfil} />
+            <h2 className="text-2xl font-semibold mb-4">User Details</h2>
+            <div className="overflow-x-auto">
+              <DataTable data={profileRows} columns={profileCols} />
+            </div>
           </section>
+
+          {/* ─── Hours Worked Today ─── */}
           <section>
-            <h2 className="text-2xl font-semibold mb-4">Horas Trabajadas Hoy</h2>
-            {loadingHoras
-              ? <p>Cargando horas…</p>
-              : errorHoras
-                ? <p className="text-red-600">Error: {errorHoras}</p>
-                : <DataTable data={horas} columns={colsHoras} />
-            }
+            <h2 className="text-2xl font-semibold mb-4">
+              Hours Worked Today
+            </h2>
+            {loadingHours ? (
+              <p>Loading hours…</p>
+            ) : errorHours ? (
+              <p className="text-red-600">Error: {errorHours}</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <DataTable data={hours} columns={hoursCols} />
+              </div>
+            )}
           </section>
         </div>
       </SidebarInset>
     </SidebarProvider>
-  )
+  );
 }

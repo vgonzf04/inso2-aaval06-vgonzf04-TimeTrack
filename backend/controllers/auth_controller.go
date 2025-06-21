@@ -42,7 +42,7 @@ func Me(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal error reading token"})
 		return
 	}
-	roleVal, ok := claims["rol"]
+	roleVal, ok := claims["role"]
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Role claim not found"})
 		return
@@ -96,19 +96,19 @@ func GoogleCallback(c *gin.Context) {
 	}
 
 	// 4) Save or update the user in the database
-	var emp models.Empleado
+	var emp models.Employee
 	result := config.DB.Where("email = ?", userInfo.Email).First(&emp)
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
 			// 4.a) If not found, create with default role "employee"
 			log.Println("User not found, creating new record:", userInfo)
-			emp = models.Empleado{
-				Nombre:            userInfo.Name,
-				Email:             userInfo.Email,
-				Cargo:             "",
-				FechaContratacion: time.Now().Format("2006-01-02"),
-				SupervisorID:      nil,
-				Rol:               "employee",
+			emp = models.Employee{
+				Name:       userInfo.Name,
+				Email:      userInfo.Email,
+				Position:   "",
+				HireDate:   time.Now().Format("2006-01-02"),
+				SupervisorID: nil,
+				Role:       "employee",
 			}
 			if err := config.DB.Create(&emp).Error; err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user in database"})
@@ -122,9 +122,9 @@ func GoogleCallback(c *gin.Context) {
 
 	// 5) Build JWT claims including "role"
 	claims := jwt.MapClaims{
-		"sub": emp.ID,
-		"rol": emp.Rol,
-		"exp": time.Now().Add(24 * time.Hour).Unix(),
+		"sub":  emp.ID,
+		"role": emp.Role,
+		"exp":  time.Now().Add(24 * time.Hour).Unix(),
 	}
 	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := jwtToken.SignedString([]byte(os.Getenv("JWT_SECRET")))
@@ -134,21 +134,29 @@ func GoogleCallback(c *gin.Context) {
 	}
 
 	// Set the cookie and redirect to the dashboard
-	c.SetCookie("token", tokenString, 3600, "/", "", false, true)
+	http.SetCookie(c.Writer, &http.Cookie{
+        Name:     "token",
+        Value:    tokenString,
+        Path:     "/",
+        MaxAge:   3600,                      // en segundos (1 hora). También podrías usar Expires: time.Now().Add(...)
+        HttpOnly: true,                      // ← no accesible desde JS
+        Secure:   false,                      // ← sólo por HTTPS
+        SameSite: http.SameSiteLaxMode,     // ← permite el envío cross‐site
+    })
 	c.Redirect(http.StatusFound, "http://localhost:3001/dashboard")
 }
 
 // Logout clears the authentication cookie.
 func Logout(c *gin.Context) {
 	// To delete a cookie, set MaxAge < 0
-	c.SetCookie(
-		"token",
-		"",
-		-1,
-		"/",
-		"",
-		false,
-		true,
-	)
+	http.SetCookie(c.Writer, &http.Cookie{
+        Name:     "token",
+        Value:    "",
+        Path:     "/",
+        MaxAge:   -1,
+        HttpOnly: true,
+        Secure:   false,
+        SameSite: http.SameSiteLaxMode,
+    })
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
 }
