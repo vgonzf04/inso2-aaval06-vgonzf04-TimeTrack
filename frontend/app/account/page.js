@@ -1,5 +1,3 @@
-// frontend/app/account/page.js
-
 "use client";
 
 import { useState, useEffect } from "react";
@@ -34,10 +32,8 @@ export default function AccountPage() {
   const [loadingHours, setLoadingHours] = useState(true);
   const [errorHours, setErrorHours] = useState(null);
 
-  // Fixed rate €/h
-  const rate = 15;
+  const rate = 15; // €/h fijo
 
-  // Helper to format a Date as "YYYY-MM-DD"
   function formatYYYYMMDD(d) {
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -45,14 +41,12 @@ export default function AccountPage() {
     return `${yyyy}-${mm}-${dd}`;
   }
 
-  // 1) Load my profile
+  // 1) Cargar perfil
   useEffect(() => {
     async function fetchProfile() {
       try {
         const res = await fetch("http://localhost:3000/employees/me", {
-          method: "GET",
           credentials: "include",
-          headers: { "Content-Type": "application/json" },
         });
         if (res.status === 401 || res.status === 403) {
           router.push("/login");
@@ -69,28 +63,27 @@ export default function AccountPage() {
     fetchProfile();
   }, [router]);
 
-  // 2) Once profile is loaded, fetch today's hours
+  // 2) Cuando perfil esté listo, traer horas de hoy
   useEffect(() => {
     if (!profile?.id) return;
-
     async function fetchHours() {
       try {
         const today = formatYYYYMMDD(new Date());
         const res = await fetch(
           `http://localhost:3000/dashboard/hours-period?start=${today}&end=${today}&employee_id=${profile.id}`,
-          { method: "GET", credentials: "include" }
+          { credentials: "include" }
         );
         if (res.status === 401 || res.status === 403) {
           router.push("/login");
           return;
         }
-        if (!res.ok) throw new Error("Failed to load hours worked");
+        if (!res.ok) throw new Error("Failed to load hours");
         const data = await res.json();
         setHours(
-          (Array.isArray(data) ? data : []).map((x) => ({
-            id: x.employee_id,
+          (Array.isArray(data) ? data : []).map(x => ({
+            id:          x.employee_id,      // ← **AGREGADO** para DataTable
             employee_id: x.employee_id,
-            name: x.name,
+            name:        x.name,
             total_hours: x.total_hours,
           }))
         );
@@ -100,11 +93,9 @@ export default function AccountPage() {
         setLoadingHours(false);
       }
     }
-
     fetchHours();
   }, [profile, router]);
 
-  // Loading & error states for profile
   if (loadingProfile) {
     return (
       <SidebarProvider>
@@ -128,34 +119,32 @@ export default function AccountPage() {
     );
   }
 
-  // Prepare profile table data
+  // Datos para tabla de perfil
   const profileRows = [
     {
-      id: profile.id,
-      name: profile.nombre,
-      email: profile.email,
-      position: profile.cargo,
-      hiringDate:
-        profile.fecha_contratacion ?? profile.FechaContratacion ?? "—",
-      supervisorId:
-        profile.supervisor_id ?? profile.SupervisorID ?? "—",
-      role: profile.rol ?? profile.Rol ?? "—",
+      id:            profile.id,
+      name:          profile.name,
+      email:         profile.email,
+      position:      profile.position,
+      hire_date:     profile.hire_date,
+      supervisor_id: profile.supervisor_id ?? "—",
+      role:          profile.role,
     },
   ];
   const profileCols = [
-    { header: "ID", accessorKey: "id" },
-    { header: "Name", accessorKey: "name" },
-    { header: "Email", accessorKey: "email" },
-    { header: "Position", accessorKey: "position" },
-    { header: "Hiring Date", accessorKey: "hiringDate" },
-    { header: "Supervisor ID", accessorKey: "supervisorId" },
-    { header: "Role", accessorKey: "role" },
+    { header: "ID",            accessorKey: "id"           },
+    { header: "Name",          accessorKey: "name"         },
+    { header: "Email",         accessorKey: "email"        },
+    { header: "Position",      accessorKey: "position"     },
+    { header: "Hiring Date",   accessorKey: "hire_date"    },
+    { header: "Supervisor ID", accessorKey: "supervisor_id" },
+    { header: "Role",          accessorKey: "role"         },
   ];
 
-  // Prepare hours table columns
+  // Columnas para horas
   const hoursCols = [
     { header: "Employee ID", accessorKey: "employee_id" },
-    { header: "Name", accessorKey: "name" },
+    { header: "Name",        accessorKey: "name"        },
     {
       header: "Total Hours",
       accessorKey: "total_hours",
@@ -176,9 +165,7 @@ export default function AccountPage() {
   return (
     <SidebarProvider>
       <AppSidebar />
-
       <SidebarInset>
-        {/* ─── Header ─── */}
         <header className="bg-background sticky top-0 flex h-16 items-center gap-2 border-b px-4">
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="mr-2 h-4" />
@@ -190,39 +177,28 @@ export default function AccountPage() {
             </BreadcrumbList>
           </Breadcrumb>
           <div className="ml-auto">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => router.push("/dashboard")}
-            >
+            <Button size="sm" variant="outline" onClick={() => router.push("/dashboard")}>
               ← Dashboard
             </Button>
           </div>
         </header>
-        {/* ─── End Header ─── */}
 
         <div className="flex flex-1 flex-col gap-4 p-4">
-          {/* ─── Profile Table ─── */}
+          {/* Profile Table */}
           <section>
             <h2 className="text-2xl font-semibold mb-4">User Details</h2>
-            <div className="overflow-x-auto">
-              <DataTable data={profileRows} columns={profileCols} />
-            </div>
+            <DataTable data={profileRows} columns={profileCols} />
           </section>
 
-          {/* ─── Hours Worked Today ─── */}
+          {/* Hours Worked Today */}
           <section>
-            <h2 className="text-2xl font-semibold mb-4">
-              Hours Worked Today
-            </h2>
+            <h2 className="text-2xl font-semibold mb-4">Hours Worked Today</h2>
             {loadingHours ? (
               <p>Loading hours…</p>
             ) : errorHours ? (
               <p className="text-red-600">Error: {errorHours}</p>
             ) : (
-              <div className="overflow-x-auto">
-                <DataTable data={hours} columns={hoursCols} />
-              </div>
+              <DataTable data={hours} columns={hoursCols} />
             )}
           </section>
         </div>

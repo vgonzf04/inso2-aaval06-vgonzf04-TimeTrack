@@ -44,7 +44,7 @@ func main() {
 	protected.Use(middleware.JWTAuth())
 	{
 		routes.RegisterEmployeeRoutes(protected)
-		routes.RegisterTimecardRoutes(protected)
+		routes.RegisterTimecardRoutes(protected)   // <--- Aquí añadimos las rutas de timecards
 		routes.RegisterVacationRoutes(protected)
 		routes.RegisterDashboardRoutes(protected)
 	}

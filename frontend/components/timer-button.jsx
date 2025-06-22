@@ -3,126 +3,110 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { IconPlayerPlay } from "@tabler/icons-react";
 
-export function TimerButton({ onFichajeCreado, onFichajeCerrado, ...props }) {
+export function TimerButton({
+  onTimecardCreated,
+  onTimecardClosed,
+  ...props
+}) {
   const [coords, setCoords] = React.useState(null);
   const [currentTimer, setCurrentTimer] = React.useState(null);
   const [dateStart, setDateStart] = React.useState(null);
 
+  // 1) Pedir geolocalización
   React.useEffect(() => {
-    // Pedir permisos de geolocalización
     if (!("geolocation" in navigator)) {
       alert("Tu navegador no soporta Geolocalización");
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setCoords({
-          lat: position.coords.latitude,
-          lon: position.coords.longitude,
-        });
-      },
-      (err) => {
-        console.warn("Error pidiendo geolocalización:", err);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10_000,
-        maximumAge: 0,
-      }
+      ({ coords }) => setCoords({ lat: coords.latitude, lon: coords.longitude }),
+      (err) => console.warn("Error pidiendo geolocalización:", err),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   }, []);
 
+  // 2) Al montar, comprobamos si hay un timecard abierto
   React.useEffect(() => {
-    // Al montar, comprobamos si ya hay un fichaje abierto
-    fetch("http://localhost:3000/fichajes/current", {
-      method: "GET",
+    fetch("http://localhost:3000/timecards/current", {
       credentials: "include",
-      headers: { "Content-Type": "application/json" },
     })
-      .then((response) => response.json())
+      .then((res) => {
+        if (res.status === 404) return null; // Ningún timecard abierto
+        if (!res.ok) throw new Error("Error fetching current timecard");
+        return res.json();
+      })
       .then((data) => {
-        if (data.running) {
+        if (data) {
           setCurrentTimer(data);
-          setDateStart(new Date(data.dateStart));
-        } else {
-          setCurrentTimer(null);
-          setDateStart(null);
+          setDateStart(new Date(data.start));
         }
       })
-      .catch((error) => {
-        console.error("Error fetching timer status:", error);
-      });
+      .catch((err) => console.error("Error fetching timer status:", err));
   }, []);
 
   const toggleTimer = () => {
-    // Si dateStart NO es null, significa que hay un fichaje abierto => lo cerramos
+    // — Si hay dateStart, entonces cierro el timecard abierto
     if (dateStart) {
-      fetch(`http://localhost:3000/fichajes/${currentTimer.id}/cerrar`, {
-        method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          latitud: coords?.lat,
-          longitud: coords?.lon,
-        }),
-      })
-        .then((response) => {
-          if (!response.ok) throw new Error("Error al cerrar fichaje");
-          return response.json();
+      fetch(
+        `http://localhost:3000/timecards/${currentTimer.id}/close`,
+        {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lat: coords?.lat, lng: coords?.lon }),
+        }
+      )
+        .then((res) => {
+          if (!res.ok) throw new Error("Error al cerrar timecard");
+          return res.json();
         })
-        .then((fichajeCerrado) => {
-          // 1) Cancelamos el estado interno
+        .then((closed) => {
+          // 1) Actualizar estado interno
           setCurrentTimer(null);
           setDateStart(null);
-
-          // 2) Avisamos al padre de que hemos cerrado un fichaje
-          //    (por si quiere actualizar alguna tabla de fichajes “cerrados”)
-          onFichajeCerrado && onFichajeCerrado(fichajeCerrado);
+          // 2) Avisar al padre para que actualice la tabla
+          onTimecardClosed?.(closed);
         })
-        .catch((error) => {
-          console.error("Error cerrando fichaje:", error);
-          alert("No se pudo cerrar el fichaje");
+        .catch((err) => {
+          console.error("Error cerrando timecard:", err);
+          alert("No se pudo cerrar el registro");
         });
-
       return;
     }
 
-    // Si dateStart es null, no hay fichaje abierto => lo creamos
+    // — Si no hay dateStart, creamos uno nuevo
     if (!coords) {
       alert("Activa los servicios de ubicación primero");
       return;
     }
-    fetch("http://localhost:3000/fichajes", {
+    fetch("http://localhost:3000/timecards", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        latitud: coords.lat,
-        longitud: coords.lon,
-      }),
+      body: JSON.stringify({ lat: coords.lat, lng: coords.lon }),
     })
-      .then((response) => {
-        if (!response.ok) throw new Error("Error al iniciar fichaje");
-        return response.json();
+      .then((res) => {
+        if (!res.ok) throw new Error("Error al iniciar timecard");
+        return res.json();
       })
-      .then((nuevoFichaje) => {
-        // 1) Actualizar el estado interno de TimerButton
-        setCurrentTimer(nuevoFichaje);
-        setDateStart(new Date(nuevoFichaje.dateStart));
-
-        // 2) Avisar al componente padre que se acaba de crear un fichaje nuevo
-        onFichajeCreado && onFichajeCreado(nuevoFichaje);
+      .then((newEntry) => {
+        // 1) Actualizar estado interno
+        setCurrentTimer(newEntry);
+        setDateStart(new Date(newEntry.start));
+        // 2) Avisar al padre para que inyecte la fila nueva en la tabla
+        onTimecardCreated?.(newEntry);
       })
-      .catch((error) => {
-        console.error("Error iniciando fichaje:", error);
-        alert("No se pudo iniciar el fichaje");
+      .catch((err) => {
+        console.error("Error iniciando timecard:", err);
+        alert("No se pudo iniciar el registro");
       });
   };
 
   return (
     <div onClick={toggleTimer} className="ml-auto flex items-center gap-2">
-      <Button size="sm" className="hidden sm:flex cursor-pointer">
-        <IconPlayerPlay className="size-4" /> {dateStart ? "Parar día" : "Comenzar día"}
+      <Button size="sm" className="hidden sm:flex cursor-pointer" {...props}>
+        <IconPlayerPlay className="size-4" />{" "}
+        {dateStart ? "Parar día" : "Comenzar día"}
       </Button>
     </div>
   );

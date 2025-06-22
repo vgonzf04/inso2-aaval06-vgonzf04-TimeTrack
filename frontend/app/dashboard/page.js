@@ -1,5 +1,4 @@
 // frontend/app/dashboard/page.js
-
 "use client";
 
 import { useState, useEffect } from "react";
@@ -19,6 +18,8 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 import { TimerButton } from "@/components/timer-button";
 
@@ -42,10 +43,10 @@ export default function DashboardPage() {
           router.push("/login");
           return;
         }
-        const meData = await meRes.json();
-        setRole(meData.role);
+        const { role } = await meRes.json();
+        setRole(role);
 
-        // 2) Load timecards
+        // 2) Load timecards (sin cambios) …
         const tcRes = await fetch("http://localhost:3000/timecards", {
           credentials: "include",
         });
@@ -56,17 +57,17 @@ export default function DashboardPage() {
         const tcData = await tcRes.json();
         setTimecards(
           tcData.map((t) => ({
-            id: t.id,
+            id:       t.id,
             employee: t.employee?.name || "—",
-            checkIn: t.checkIn || "—",
-            checkOut: t.checkOut || "—",
-            latitude: t.latitude ?? "—",
-            longitude: t.longitude ?? "—",
+            start:    t.start    || "—",
+            end:      t.end      || "—",
+            lat:      t.lat      ?? "—",
+            lng:      t.lng      ?? "—",
             location: t.location || "—",
           }))
         );
 
-        // 3) Load vacations
+        // 3) Load VACATIONS using el modelo JSON correcto:
         const vacRes = await fetch("http://localhost:3000/vacations", {
           credentials: "include",
         });
@@ -77,11 +78,12 @@ export default function DashboardPage() {
         const vacData = await vacRes.json();
         setVacations(
           vacData.map((v) => ({
-            id: v.id,
-            employee: v.employee?.name || "—",
-            startDate: v.startStr || v.start?.slice(0, 10) || "—",
-            endDate: v.endStr || v.end?.slice(0, 10) || "—",
-            status: (v.status || v.estado || "—").toLowerCase(),
+            id:       v.id,
+            employee: v.employee?.name           || "—",
+            // Estas propiedades vienen de tu modelo:
+            start:    v.start_date_str          || v.start_date?.slice(0, 10) || "—",
+            end:      v.end_date_str            || v.end_date?.slice(0, 10)   || "—",
+            status:   v.status                  || "—",
           }))
         );
 
@@ -96,26 +98,25 @@ export default function DashboardPage() {
     loadData();
   }, [router]);
 
-  // Callback when a new timecard is created
+  // Callbacks sin cambios…
   function handleTimecardCreated(raw) {
     const entry = {
-      id: raw.id,
+      id:       raw.id,
       employee: raw.employee?.name || "—",
-      checkIn: raw.checkIn || "—",
-      checkOut: raw.checkOut || "—",
-      latitude: raw.latitude ?? "—",
-      longitude: raw.longitude ?? "—",
+      start:    raw.start    || "—",
+      end:      raw.end      || "—",
+      lat:      raw.lat      ?? "—",
+      lng:      raw.lng      ?? "—",
       location: raw.location || "—",
     };
     setTimecards((prev) => [...prev, entry]);
     toast.success("Timecard added");
   }
 
-  // Callback when a timecard is closed
   function handleTimecardClosed(raw) {
     setTimecards((prev) =>
       prev.map((t) =>
-        t.id === raw.id ? { ...t, checkOut: raw.checkOut || "—" } : t
+        t.id === raw.id ? { ...t, end: raw.end || "—" } : t
       )
     );
     toast.success("Timecard closed");
@@ -133,7 +134,6 @@ export default function DashboardPage() {
       </SidebarProvider>
     );
   }
-
   if (error) {
     return (
       <SidebarProvider>
@@ -146,21 +146,20 @@ export default function DashboardPage() {
   }
 
   const timecardColumns = [
-    { header: "ID", accessorKey: "id" },
+    { header: "ID",       accessorKey: "id" },
     { header: "Employee", accessorKey: "employee" },
-    { header: "Check-In", accessorKey: "checkIn" },
-    { header: "Check-Out", accessorKey: "checkOut" },
-    { header: "Latitude", accessorKey: "latitude" },
-    { header: "Longitude", accessorKey: "longitude" },
+    { header: "Start",    accessorKey: "start" },
+    { header: "End",      accessorKey: "end" },
+    { header: "Lat",      accessorKey: "lat" },
+    { header: "Lng",      accessorKey: "lng" },
     { header: "Location", accessorKey: "location" },
   ];
-
   const vacationColumns = [
-    { header: "ID", accessorKey: "id" },
+    { header: "ID",       accessorKey: "id" },
     { header: "Employee", accessorKey: "employee" },
-    { header: "Start Date", accessorKey: "startDate" },
-    { header: "End Date", accessorKey: "endDate" },
-    { header: "Status", accessorKey: "status" },
+    { header: "Start",    accessorKey: "start" },
+    { header: "End",      accessorKey: "end" },
+    { header: "Status",   accessorKey: "status" },
   ];
 
   return (
@@ -177,18 +176,11 @@ export default function DashboardPage() {
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-
           {role === "supervisor" && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => router.push("/admin")}
-              className="ml-auto"
-            >
+            <Button size="sm" variant="outline" onClick={() => router.push("/admin")} className="ml-auto">
               Go to Admin
             </Button>
           )}
-
           <TimerButton
             onTimecardCreated={handleTimecardCreated}
             onTimecardClosed={handleTimecardClosed}
