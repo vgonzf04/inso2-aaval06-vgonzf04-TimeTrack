@@ -19,8 +19,8 @@ type TimeEntry struct {
     Start      string     `gorm:"-" json:"start"`
     End        string     `gorm:"-" json:"end,omitempty"`
 
-    Latitude   float64    `json:"lat"`
-    Longitude  float64    `json:"lng"`
+    Latitude   float64    `json:"latitude"`
+    Longitude  float64    `json:"longitude"`
     Location   string     `json:"location"`
 }
 

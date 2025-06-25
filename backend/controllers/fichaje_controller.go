@@ -52,8 +52,8 @@ func CreateTimeEntry(c *gin.Context) {
 
 	// 3) Bind JSON input
 	var input struct {
-		Lat float64 `json:"lat"`
-		Lng float64 `json:"lng"`
+		Latitude float64 `json:"latitude"`
+		Longitude float64 `json:"longitude"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		log.Printf("JSON bind error in CreateTimeEntry: %v\n", err)
@@ -77,7 +77,7 @@ func CreateTimeEntry(c *gin.Context) {
 	}
 
 	// 5) Reverse geocode
-	address := reverseGeocode(input.Lat, input.Lng)
+	address := reverseGeocode(input.Latitude, input.Longitude)
 
 	// 6) Create the new time entry
 	loc, err := time.LoadLocation("Europe/Madrid")
@@ -90,8 +90,8 @@ func CreateTimeEntry(c *gin.Context) {
 	entry := models.TimeEntry{
 		EmployeeID: emp.ID,
 		StartTime:  now,
-		Latitude:   input.Lat,
-		Longitude:  input.Lng,
+		Latitude:   input.Latitude,
+		Longitude:  input.Longitude,
 		Location:   address,
 	}
 

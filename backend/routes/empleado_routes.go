@@ -10,6 +10,10 @@ import (
 func RegisterEmployeeRoutes(rg *gin.RouterGroup) {
 	employeeGroup := rg.Group("/employees")
 	{
+
+		// GET /employees → lista todos los empleados (para el dropdown)
+       employeeGroup.GET("", controllers.ListEmployees)
+
 		// GET /employees/me       → return authenticated user’s full profile
 		employeeGroup.GET("/me", controllers.GetMyProfile)
 

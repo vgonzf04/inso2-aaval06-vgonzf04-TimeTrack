@@ -19,7 +19,7 @@ export function TimerButton({
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      ({ coords }) => setCoords({ lat: coords.latitude, lon: coords.longitude }),
+      ({ coords }) => setCoords({ latitude: coords.latitude, lon: coords.longitude }),
       (err) => console.warn("Error pidiendo geolocalización:", err),
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
@@ -53,7 +53,7 @@ export function TimerButton({
           method: "PUT",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lat: coords?.lat, lng: coords?.lon }),
+          body: JSON.stringify({ latitude: coords?.latitude, longitude: coords?.lon }),
         }
       )
         .then((res) => {
@@ -83,7 +83,7 @@ export function TimerButton({
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lat: coords.lat, lng: coords.lon }),
+      body: JSON.stringify({ latitude: coords.latitude, longitude: coords.lon }),
     })
       .then((res) => {
         if (!res.ok) throw new Error("Error al iniciar timecard");

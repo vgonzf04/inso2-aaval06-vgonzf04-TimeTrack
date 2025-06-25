@@ -61,8 +61,8 @@ export default function DashboardPage() {
             employee: t.employee?.name || "—",
             start:    t.start    || "—",
             end:      t.end      || "—",
-            lat:      t.lat      ?? "—",
-            lng:      t.lng      ?? "—",
+            latitude:      t.latitude      ?? "—",
+            longitude:      t.longitude      ?? "—",
             location: t.location || "—",
           }))
         );
@@ -105,8 +105,8 @@ export default function DashboardPage() {
       employee: raw.employee?.name || "—",
       start:    raw.start    || "—",
       end:      raw.end      || "—",
-      lat:      raw.lat      ?? "—",
-      lng:      raw.lng      ?? "—",
+      latitude:      raw.latitude      ?? "—",
+      longitude:      raw.longitude      ?? "—",
       location: raw.location || "—",
     };
     setTimecards((prev) => [...prev, entry]);
@@ -150,8 +150,8 @@ export default function DashboardPage() {
     { header: "Employee", accessorKey: "employee" },
     { header: "Start",    accessorKey: "start" },
     { header: "End",      accessorKey: "end" },
-    { header: "Lat",      accessorKey: "lat" },
-    { header: "Lng",      accessorKey: "lng" },
+    { header: "Latitude",      accessorKey: "latitude" },
+    { header: "Longitude",      accessorKey: "longitude" },
     { header: "Location", accessorKey: "location" },
   ];
   const vacationColumns = [

@@ -15,6 +15,16 @@ import (
 
 // GetEmployeeByID returns an employee by its ID.
 // Only supervisors may call this endpoint.
+
+func ListEmployees(c *gin.Context) {
+    var emps []models.Employee
+    if err := config.DB.Find(&emps).Error; err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching employees"})
+        return
+    }
+    c.JSON(http.StatusOK, emps)
+}
+
 func GetEmployeeByID(c *gin.Context) {
 	// 1) Retrieve user_id and user_role from context (set by JWTAuth)
 	idRaw, existsID := c.Get("user_id")
